@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Pro Sports EV Bot</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111827">
+  <link rel="manifest" href="/static/manifest.json">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <main>
+    <header class="hero">
+      <h1>Pro Sports EV Bot</h1>
+      <p>Detector automático de jugadas con valor esperado positivo.</p>
+    </header>
+
+    <section class="card controls">
+      <h2>Filtros</h2>
+
+      <div class="grid">
+        {% for label, key in sports.items() %}
+        <label class="check">
+          <input type="checkbox" name="sports" value="{{ label }}" checked>
+          {{ label }}
+        </label>
+        {% endfor %}
+      </div>
+
+      <div class="numbers">
+        <label>
+          EV mínimo
+          <input id="ev_min" type="number" step="0.01" value="0.03">
+        </label>
+        <label>
+          Edge mínimo
+          <input id="edge_min" type="number" step="0.01" value="0.03">
+        </label>
+      </div>
+
+      <button onclick="loadPicks()">Buscar mejores jugadas</button>
+      <p class="hint">Recomendado: EV 0.03 y Edge 0.03. Más agresivo: EV 0.05.</p>
+    </section>
+
+    <section class="card">
+      <div class="row">
+        <h2>Ranking de picks</h2>
+        <span id="status">Listo</span>
+      </div>
+      <div id="results"></div>
+    </section>
+  </main>
+
+<script>
+async function loadPicks() {
+  const status = document.getElementById("status");
+  const results = document.getElementById("results");
+  status.textContent = "Analizando...";
+  results.innerHTML = "";
+
+  const sports = [...document.querySelectorAll("input[name='sports']:checked")]
+    .map(x => "sports=" + encodeURIComponent(x.value)).join("&");
+
+  const ev = document.getElementById("ev_min").value;
+  const edge = document.getElementById("edge_min").value;
+
+  try {
+    const res = await fetch(`/api/picks?${sports}&ev_min=${ev}&edge_min=${edge}`);
+    const data = await res.json();
+
+    status.textContent = `${data.count} picks encontrados`;
+
+    if (!data.picks.length) {
+      results.innerHTML = `<p class="empty">No hay picks que pasen esos filtros. Baja EV o Edge.</p>`;
+      return;
+    }
+
+    results.innerHTML = data.picks.map((p, i) => `
+      <article class="pick">
+        <div class="pick-top">
+          <strong>#${i+1} ${p.sport} — ${p.market.toUpperCase()}</strong>
+          <span class="badge">EV ${p.ev}%</span>
+        </div>
+        <h3>${p.selection}${p.point !== null ? " " + p.point : ""}</h3>
+        <p>${p.game}</p>
+        <div class="stats">
+          <span>Odds: ${p.american_odds}</span>
+          <span>Casa: ${p.bookmaker}</span>
+          <span>Prob. justa: ${p.fair_probability}%</span>
+          <span>Prob. implícita: ${p.implied_probability}%</span>
+          <span>Edge: ${p.edge}%</span>
+        </div>
+        <small>Inicio: ${p.start_time || "N/D"}</small>
+      </article>
+    `).join("");
+  } catch (e) {
+    status.textContent = "Error";
+    results.innerHTML = `<p class="empty">Error: ${e}</p>`;
+  }
+}
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/static/sw.js").catch(() => {});
+}
+</script>
+</body>
+</html>
