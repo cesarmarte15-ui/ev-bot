@@ -1,3 +1,11 @@
+import time
+
+CACHE = {
+    "data": None,
+    "timestamp": 0
+}
+
+CACHE_TTL = 300  # 5 minutos
 import os
 import math
 import requests
