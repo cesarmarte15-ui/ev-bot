@@ -28,6 +28,9 @@ REGIONS = "us"
 MARKETS = "h2h"
 ODDS_FORMAT = "american"
 
+CACHE = {}
+CACHE_TTL = 300
+
 def american_to_decimal(odds):
     if odds is None:
         return None
