@@ -162,3 +162,26 @@ def find_value_bets(selected_sports, ev_min=0.03, edge_min=0.03):
     all_picks = [p for p in all_picks if "error" not in p]
     all_picks.sort(key=lambda x: (x.get("ev", 0), x.get("edge", 0)), reverse=True)
     return all_picks[:100]
+
+
+def debug_all_sports():
+    result = {
+        "api_key": "OK" if API_KEY else "MISSING",
+        "sports": {}
+    }
+
+    for label, key in SPORTS.items():
+        try:
+            games = fetch_odds(key)
+            result["sports"][label] = {
+                "games_count": len(games),
+                "ok": True
+            }
+        except Exception as e:
+            result["sports"][label] = {
+                "games_count": 0,
+                "ok": False,
+                "error": str(e)
+            }
+
+    return result
