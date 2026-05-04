@@ -11,8 +11,8 @@ API_KEY = os.getenv("ODDS_API_KEY", "")
 SPORTS = {
     "MLB": "baseball_mlb",
     "NBA": "basketball_nba",
-    "NHL": "icehockey_nhl",
-    "NFL": "americanfootball_nfl",
+    "NHL": "icehockey_nhl"
+}
 
 
 REGIONS = "us,us2,uk,eu"
