@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 API_KEY = os.getenv("ODDS_API_KEY", "")
+print("DEBUG API KEY:", API_KEY)
 
 SPORTS = {
     "MLB": "baseball_mlb",
