@@ -27,6 +27,8 @@ def api_picks():
     picks = find_value_bets(selected_sports, ev_min=ev_min, edge_min=edge_min)
     return jsonify({"count": len(picks), "picks": picks})
 
-if __name__ == "__main__":
-    port = int(os.getenv("PORT", "5000"))
-    app.run(host="0.0.0.0", port=port, debug=True)
+import os
+
+port = int(os.environ.get("PORT", 10000))
+
+app.run(host="0.0.0.0", port=port)
