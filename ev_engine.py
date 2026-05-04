@@ -71,9 +71,21 @@ def fetch_odds(sport_key):
         "oddsFormat": ODDS_FORMAT,
         "dateFormat": "iso",
     }
-    r = requests.get(url, params=params, timeout=30)
-    r.raise_for_status()
-    return r.json()
+    cache_key = sport_key
+
+now = time.time()
+if cache_key in CACHE:
+    cached_time, cached_data = CACHE[cache_key]
+    if now - cached_time < CACHE_TTL:
+        return cached_data
+
+r = requests.get(url, params=params, timeout=30)
+r.raise_for_status()
+data = r.json()
+
+CACHE[cache_key] = (now, data)
+
+return data
 
 def find_best_price_for_same_outcome(game, market_key, outcome_name, point=None):
     best = None
