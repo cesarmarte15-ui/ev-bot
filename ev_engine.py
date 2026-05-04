@@ -15,8 +15,8 @@ SPORTS = {
 }
 
 
-REGIONS = "us,us2,uk,eu"
-MARKETS = "h2h,spreads,totals"
+REGIONS = "us"
+MARKETS = "h2h"
 ODDS_FORMAT = "american"
 
 def american_to_decimal(odds):
