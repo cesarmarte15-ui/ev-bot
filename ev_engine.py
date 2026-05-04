@@ -13,13 +13,7 @@ SPORTS = {
     "NBA": "basketball_nba",
     "NHL": "icehockey_nhl",
     "NFL": "americanfootball_nfl",
-    "SOCCER_EPL": "soccer_epl",
-    "SOCCER_SPAIN": "soccer_spain_la_liga",
-    "SOCCER_ITALY": "soccer_italy_serie_a",
-    "SOCCER_GERMANY": "soccer_germany_bundesliga",
-    "SOCCER_FRANCE": "soccer_france_ligue_one",
-    "SOCCER_UEFA": "soccer_uefa_champs_league",
-}
+
 
 REGIONS = "us,us2,uk,eu"
 MARKETS = "h2h,spreads,totals"
