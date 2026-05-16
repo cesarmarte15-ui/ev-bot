@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Pro Sports Bot v6</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <main class="app">
+    <section class="hero shell">
+      <div>
+        <p class="eyebrow">MLB • NBA • NHL</p>
+        <h1>Pro v7.1</h1>
+        <p class="subtitle">Smart Tickets 3 / 6 / 10 estable</p>
+      </div>
+      <div id="status" class="status-pill">Listo</div>
+    </section>
+
+    <section class="panel shell">
+      <div class="panel-title">
+        <h2>Control</h2>
+        <button class="ghost" onclick="loadDashboard(false)">Usar cache</button>
+      </div>
+
+      <div class="sports-grid">
+        {% for label, key in sports.items() %}
+        <label class="sport-card">
+          <input type="checkbox" name="sports" value="{{ label }}" checked>
+          <span>{{ label }}</span>
+        </label>
+        {% endfor %}
+      </div>
+
+      <div class="button-grid">
+        <button class="primary blue-btn" onclick="loadDashboard(false)">Buscar pronóstico</button>
+        <button class="primary red-btn" onclick="loadDashboard(true)">Actualizar odds</button>
+        <button class="primary black-btn" onclick="loadDebug()">Diagnóstico</button>
+      </div>
+      <p class="hint">v6 corrige probabilidades absurdas. Pick 1 ML. Pick 2 Spread/Total.</p>
+    </section>
+
+    <section class="panel shell">
+      <div class="panel-title"><h2>Resumen</h2></div>
+      <div id="summary" class="summary-grid"><div class="summary-card">Sin datos todavía</div></div>
+    </section>
+
+    <section class="panel shell important">
+      <div class="panel-title"><h2>⭐ Top 5 del día</h2></div>
+      <div id="top5" class="results"><div class="empty-card">Presiona Buscar pronóstico.</div></div>
+    </section>
+
+    <section class="panel shell ticket-zone">
+      <div class="panel-title"><h2>🎟️ Smart Tickets</h2></div>
+      <div id="tickets" class="results"><div class="empty-card">Sin tickets todavía.</div></div>
+    </section>
+
+    <section class="panel shell important">
+      <div class="panel-title"><h2>⭐ Mejores jugadas por partido</h2></div>
+      <div id="games" class="results"><div class="empty-card">Presiona Buscar pronóstico.</div></div>
+    </section>
+
+    <section class="panel shell">
+      <div class="panel-title"><h2>🟢 Seguridad a jugar</h2></div>
+      <div id="green" class="results"><div class="empty-card">Sin señales verdes todavía.</div></div>
+    </section>
+
+    <section class="panel shell">
+      <div class="panel-title"><h2>🔵 Partidos probables</h2></div>
+      <div id="blue" class="results"><div class="empty-card">Sin probables todavía.</div></div>
+    </section>
+
+    <section class="panel shell muted">
+      <div class="panel-title"><h2>🔴 Evitar</h2></div>
+      <div id="red" class="results compact"><div class="empty-card">Sin señales todavía.</div></div>
+    </section>
+  </main>
+
+<script>
+function selectedSportsQuery(){
+  return [...document.querySelectorAll("input[name='sports']:checked")]
+    .map(x=>"sports="+encodeURIComponent(x.value)).join("&")
+}
+function c(sig){return sig.color || "red"}
+function safeText(v,f=""){if(v===null||v===undefined)return f;if(typeof v==="object"){return v.selection||v.name||f}return String(v)}
+function safeNum(v,f="N/D"){if(v===null||v===undefined||Number.isNaN(Number(v)))return f;return v}
+function signalCard(sig, idx, titleOverride){
+  const title = titleOverride || `#${idx+1}`;
+  return `<article class="pick-card ${c(sig)}">
+    <div class="rank">${title}</div>
+    <div class="pick-body">
+      <div class="pick-top">
+        <span class="badge">${sig.sport||sig.short_market||"Pick"}</span>
+        <span class="confidence">${safeText(sig.label,'N/D')}</span>
+      </div>
+      <h3>${safeText(sig.selection,'Sin selección')}</h3>
+      <p>${safeText(sig.game,'')}</p>
+      <div class="metrics">
+        <span>Validación <b>${safeNum(sig.validation)}%</b></span>
+        <span>Probabilidad <b>${safeNum(sig.probability)}%</b></span>
+        <span>Odds <b>${safeNum(sig.odds)}</b></span>
+      </div>
+      <small><b>Motivo:</b> ${safeText(sig.reason,'')}</small>
+      <small class="details">${safeText(sig.short_market||sig.market,'Mercado')} • Stake ${safeText(sig.stake,'N/D')} • Casa ${safeText(sig.bookmaker,'N/D')} ${sig.ev!==null&&sig.ev!==undefined?`• EV ${sig.ev}% • Edge ${sig.edge}%`:""}</small>
+    </div>
+  </article>`
+}
+function compactCard(sig){
+  return `<article class="avoid-card">
+    <b>${safeText(sig.selection,'Sin selección')}</b>
+    <span>${safeText(sig.game,'')}</span>
+    <small>Validación ${safeNum(sig.validation)}% • Prob. ${safeNum(sig.probability)}% • ${safeText(sig.reason,'')}</small>
+  </article>`
+}
+function ticketCard(t,idx){
+  const picks = (t.picks || []).map((x,i)=>`<li><b>${i+1}. ${safeText(x.selection,"Pick")}</b><small>${safeText(x.short_market||x.market,"")} • ${safeNum(x.validation)}% • ${safeText(x.premium_tag,"")}</small></li>`).join("");
+  return `<article class="ticket-card ${c(t)}">
+    <div class="ticket-head">
+      <div><span class="badge">${safeText(t.ticket_type,"Smart Ticket")}</span><h3>${safeText(t.name,"Ticket")}</h3><p>${safeText(t.reason,"")}</p></div>
+      <div class="ticket-score"><b>${safeNum(t.validation)}%</b><small>Validación</small></div>
+    </div>
+    <div class="metrics"><span>Picks <b>${(t.picks||[]).length}/${safeNum(t.target_count)}</b></span><span>Prob. comb. <b>${safeNum(t.combined_probability)}%</b></span><span>Riesgo <b>${safeText(t.risk,"N/D")}</b></span></div>
+    <ul class="parlay-list">${picks}</ul>
+  </article>`
+}
+
+function bestNonRed(g){
+  if(g.secondary_pick && g.secondary_pick.color !== "red") return {...g.secondary_pick, game:"Mejor jugada alternativa"};
+  if(g.primary_pick && g.primary_pick.color !== "red") return {...g.primary_pick, game:"Pronóstico ML"};
+  if(g.secondary_pick) return {...g.secondary_pick, game:"Mejor alternativa disponible"};
+  return g.primary_pick ? {...g.primary_pick, game:"Pronóstico ML"} : null;
+}
+function gameCard(g){
+  const best = bestNonRed(g);
+  const ml = g.primary_pick ? {...g.primary_pick, game:"Pronóstico ML"} : null;
+  const alt = g.secondary_pick ? {...g.secondary_pick, game:"Pick alternativo"} : null;
+  let cards = "";
+  if(best){cards += signalCard(best,0,"★")}
+  if(ml && (!best || ml.selection !== best.selection || ml.short_market !== best.short_market)){cards += signalCard(ml,1,"ML")}
+  if(alt && (!best || alt.selection !== best.selection || alt.short_market !== best.short_market)){cards += signalCard(alt,2,"ALT")}
+  return `<article class="game-card">
+    <div class="game-title">
+      <span class="badge">${g.sport}</span>
+      <h3>${g.game}</h3>
+      <p>${g.start_time||"Horario no disponible"}</p>
+    </div>
+    <div class="two-picks">${cards}</div>
+    <p class="note">${g.note}</p>
+  </article>`
+}
+async function loadDashboard(force){
+  const status=document.getElementById("status");
+  status.textContent=force?"Actualizando...":"Buscando...";
+  for(const id of ["top5","tickets","green","blue","red","games"]) document.getElementById(id).innerHTML="";
+  document.getElementById("top5").innerHTML='<div class="loading">Consultando datos...</div>';
+  try{
+    const res=await fetch(`/api/dashboard?${selectedSportsQuery()}&refresh=${force?1:0}`);
+    const data=await res.json();
+    status.textContent=`${data.games.length} juegos`;
+    document.getElementById("summary").innerHTML=Object.entries(data.sports||{}).map(([sport,info])=>`
+      <div class="summary-card">
+        <span>${sport}</span>
+        <b>${info.games_count??0} juegos hoy</b>
+        <small>${info.from_cache?"Desde cache":"API nueva"} ${info.cache_seconds_left?"• "+info.cache_seconds_left+"s":""}</small>
+        ${info.error?`<small class="error">${info.error}</small>`:""}
+      </div>`).join("");
+    document.getElementById("top5").innerHTML=(data.top5||[]).length?data.top5.map((p,i)=>signalCard(p,i)).join(""):'<div class="empty-card">No hay Top 5 disponible.</div>';
+    document.getElementById("tickets").innerHTML=(data.smart_tickets||[]).length?data.smart_tickets.map((p,i)=>ticketCard(p,i)).join(""):'<div class="empty-card">No hay tickets recomendados.</div>';
+    document.getElementById("games").innerHTML=data.games.length?data.games.map(gameCard).join(""):'<div class="empty-card">No hay partidos disponibles.</div>';
+    document.getElementById("green").innerHTML=data.green.length?data.green.map((p,i)=>signalCard(p,i)).join(""):'<div class="empty-card">No hay seguridad a jugar ahora.</div>';
+    document.getElementById("blue").innerHTML=data.blue.length?data.blue.map((p,i)=>signalCard(p,i)).join(""):'<div class="empty-card">No hay probables ahora.</div>';
+    document.getElementById("red").innerHTML=data.red.length?data.red.map(compactCard).join(""):'<div class="empty-card">No hay jugadas en evitar.</div>';
+  }catch(e){
+    status.textContent="Error";
+    document.getElementById("top5").innerHTML=`<div class="empty-card">Error: ${e}</div>`;
+  }
+}
+async function loadDebug(){
+  const status=document.getElementById("status");
+  status.textContent="Debug...";
+  try{
+    const data=await fetchJSON("/api/debug");
+    status.textContent="Debug OK";
+    document.getElementById("summary").innerHTML=`<pre class="raw">${JSON.stringify(data,null,2)}</pre>`;
+  }catch(e){
+    status.textContent="Error";
+    document.getElementById("summary").innerHTML=`<div class="empty-card">Error: ${safeText(e.message || e)}</div>`;
+  }
+}
+</script>
+</body>
+</html>
