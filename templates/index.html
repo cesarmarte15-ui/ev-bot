@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>EV Bot Pro v8.3</title>
+<style>
+  :root {
+    --bg:        #0d0f14;
+    --bg2:       #151820;
+    --bg3:       #1c2030;
+    --border:    #252a3a;
+    --text:      #e2e8f0;
+    --muted:     #64748b;
+    --green:     #22c55e;
+    --green-dim: #14532d;
+    --blue:      #3b82f6;
+    --blue-dim:  #1e3a5f;
+    --gold:      #f59e0b;
+    --gold-dim:  #451a03;
+    --silver:    #94a3b8;
+    --silver-dim:#1e293b;
+    --red:       #ef4444;
+    --radius:    10px;
+    --font:      'Inter', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    min-height: 100vh;
+  }
+
+  /* HEADER */
+  header {
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .logo { display: flex; align-items: center; gap: 10px; }
+  .logo-icon { font-size: 22px; }
+  .logo-text { font-size: 16px; font-weight: 700; letter-spacing: -0.3px; }
+  .version-badge {
+    background: var(--gold-dim);
+    color: var(--gold);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 20px;
+    border: 1px solid var(--gold);
+  }
+  .header-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .btn {
+    padding: 8px 16px;
+    border-radius: var(--radius);
+    border: none;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+  .btn:hover { opacity: 0.85; }
+  .btn-primary { background: var(--blue); color: #fff; }
+  .btn-outline { background: transparent; color: var(--text); border: 1px solid var(--border); }
+  #status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--muted);
+    display: inline-block;
+  }
+  #status-dot.live { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  #status-text { font-size: 12px; color: var(--muted); }
+
+  /* TABS */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    padding: 16px 24px 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg2);
+    overflow-x: auto;
+  }
+  .tab {
+    padding: 10px 18px;
+    border-radius: var(--radius) var(--radius) 0 0;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid transparent;
+    border-bottom: none;
+    color: var(--muted);
+    background: transparent;
+    white-space: nowrap;
+    transition: all 0.15s;
+  }
+  .tab.active {
+    background: var(--bg);
+    color: var(--text);
+    border-color: var(--border);
+    border-bottom-color: var(--bg);
+  }
+  .tab:hover:not(.active) { color: var(--text); }
+
+  /* MAIN */
+  main { padding: 24px; max-width: 1400px; margin: 0 auto; }
+
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* SECTION HEADERS */
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+    margin-top: 28px;
+  }
+  .section-header:first-child { margin-top: 0; }
+  .section-title { font-size: 15px; font-weight: 700; }
+  .section-count {
+    background: var(--bg3);
+    color: var(--muted);
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 20px;
+  }
+
+  /* CARDS GRID */
+  .cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 14px;
+    margin-bottom: 8px;
+  }
+
+  .card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.15s;
+  }
+  .card:hover { border-color: #3a4060; }
+
+  /* Color accents */
+  .card.green  { border-left: 3px solid var(--green); }
+  .card.blue   { border-left: 3px solid var(--blue); }
+  .card.gold   { border-left: 3px solid var(--gold); }
+  .card.silver { border-left: 3px solid var(--silver); }
+  .card.red    { border-left: 3px solid var(--red); opacity: 0.6; }
+
+  .card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 10px;
+    gap: 8px;
+  }
+  .card-label {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 6px;
+    white-space: nowrap;
+  }
+  .green  .card-label { background: var(--green-dim); color: var(--green); }
+  .blue   .card-label { background: var(--blue-dim);  color: var(--blue); }
+  .gold   .card-label { background: var(--gold-dim);  color: var(--gold); }
+  .silver .card-label { background: var(--silver-dim);color: var(--silver); }
+
+  .card-sport {
+    font-size: 11px;
+    color: var(--muted);
+    background: var(--bg3);
+    padding: 3px 8px;
+    border-radius: 6px;
+  }
+  .card-game {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 6px;
+    line-height: 1.4;
+  }
+  .card-selection {
+    font-size: 15px;
+    font-weight: 700;
+    margin-bottom: 10px;
+    color: var(--text);
+  }
+
+  .card-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .stat {
+    background: var(--bg3);
+    border-radius: 7px;
+    padding: 8px;
+    text-align: center;
+  }
+  .stat-val { font-size: 16px; font-weight: 700; }
+  .stat-lbl { font-size: 10px; color: var(--muted); margin-top: 2px; }
+  .green  .stat-val { color: var(--green); }
+  .blue   .stat-val { color: var(--blue); }
+  .gold   .stat-val { color: var(--gold); }
+  .silver .stat-val { color: var(--silver); }
+
+  .card-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .card-book { display: flex; align-items: center; gap: 4px; }
+  .card-stake {
+    font-weight: 600;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 5px;
+    background: var(--bg3);
+  }
+
+  /* ODDS badge */
+  .odds-badge {
+    font-size: 13px;
+    font-weight: 800;
+    font-family: 'Courier New', monospace;
+  }
+  .odds-pos { color: var(--gold); }
+  .odds-neg { color: var(--silver); }
+
+  /* TICKET */
+  .ticket-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    margin-bottom: 14px;
+  }
+  .ticket-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .ticket-title { font-size: 15px; font-weight: 700; }
+  .ticket-meta { display: flex; gap: 8px; flex-wrap: wrap; }
+  .ticket-badge {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 20px;
+    border: 1px solid;
+  }
+  .ticket-badge.green  { color: var(--green);  border-color: var(--green);  background: var(--green-dim); }
+  .ticket-badge.gold   { color: var(--gold);   border-color: var(--gold);   background: var(--gold-dim); }
+  .ticket-picks { display: flex; flex-direction: column; gap: 8px; }
+  .ticket-pick {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--bg3);
+    border-radius: 7px;
+    padding: 10px 14px;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .ticket-pick-left { flex: 1; min-width: 0; }
+  .ticket-pick-game { font-size: 11px; color: var(--muted); }
+  .ticket-pick-sel  { font-size: 13px; font-weight: 600; }
+  .ticket-pick-right { display: flex; align-items: center; gap: 8px; }
+  .ticket-stats {
+    display: flex;
+    gap: 16px;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  .ticket-stat { text-align: center; }
+  .ticket-stat-val { font-size: 18px; font-weight: 700; color: var(--gold); }
+  .ticket-stat-lbl { font-size: 11px; color: var(--muted); }
+
+  /* SPORTS TABLE */
+  .sports-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin-bottom: 24px;
+  }
+  .sports-table th {
+    text-align: left;
+    padding: 10px 14px;
+    color: var(--muted);
+    font-weight: 600;
+    border-bottom: 1px solid var(--border);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .sports-table td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .sports-table tr:last-child td { border-bottom: none; }
+  .dot-ok  { color: var(--green); }
+  .dot-err { color: var(--red); }
+
+  /* EMPTY / LOADING */
+  .empty-state {
+    text-align: center;
+    padding: 48px 24px;
+    color: var(--muted);
+  }
+  .empty-icon { font-size: 40px; margin-bottom: 12px; }
+  .empty-msg  { font-size: 14px; }
+
+  .loading-spinner {
+    display: inline-block;
+    width: 20px; height: 20px;
+    border: 2px solid var(--border);
+    border-top-color: var(--blue);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .loading-overlay {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 48px;
+    color: var(--muted);
+    font-size: 14px;
+  }
+
+  /* CACHE BAR */
+  .cache-bar {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+    font-size: 12px;
+    color: var(--muted);
+    flex-wrap: wrap;
+  }
+  .cache-bar span { display: flex; align-items: center; gap: 5px; }
+
+  /* RESPONSIVE */
+  @media (max-width: 600px) {
+    main { padding: 14px; }
+    .cards-grid { grid-template-columns: 1fr; }
+    .tabs { padding: 12px 14px 0; }
+    header { padding: 12px 14px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <span class="logo-icon">📊</span>
+    <span class="logo-text">EV Bot Pro</span>
+    <span class="version-badge">v8.3</span>
+  </div>
+  <div class="header-right">
+    <span id="status-dot"></span>
+    <span id="status-text">Cargando...</span>
+    <button class="btn btn-outline" onclick="loadData(true)">🔄 Actualizar</button>
+    <button class="btn btn-primary" onclick="showTab('efficiency')">Ver Eficiencia</button>
+  </div>
+</header>
+
+<div class="tabs">
+  <button class="tab active" onclick="showTab('dashboard')" id="tab-dashboard">🏆 Dashboard</button>
+  <button class="tab" onclick="showTab('efficiency')" id="tab-efficiency">🔒 Eficiencia</button>
+  <button class="tab" onclick="showTab('soccer')" id="tab-soccer">⚽ Soccer Value</button>
+  <button class="tab" onclick="showTab('tickets')" id="tab-tickets">🎟 Tickets</button>
+  <button class="tab" onclick="showTab('debug')" id="tab-debug">🛠 Debug</button>
+</div>
+
+<main>
+
+  <!-- DASHBOARD -->
+  <div class="tab-content active" id="content-dashboard">
+    <div id="cache-info"></div>
+    <div id="top-picks-container"></div>
+  </div>
+
+  <!-- EFICIENCIA -->
+  <div class="tab-content" id="content-efficiency">
+    <div class="section-header">
+      <span class="section-title">🔒 Picks Sólidos — Difícil Perder</span>
+      <span class="section-count" id="eff-green-count">0</span>
+    </div>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:16px;">MLB · NBA · NHL — Favoritos con alta probabilidad y valor matemático positivo.</p>
+    <div class="cards-grid" id="efficiency-green-grid"></div>
+
+    <div class="section-header">
+      <span class="section-title">📌 Probables</span>
+      <span class="section-count" id="eff-blue-count">0</span>
+    </div>
+    <div class="cards-grid" id="efficiency-blue-grid"></div>
+  </div>
+
+  <!-- SOCCER VALUE -->
+  <div class="tab-content" id="content-soccer">
+    <div class="section-header">
+      <span class="section-title">💎 Value Alto — Odds Altos con EV+</span>
+      <span class="section-count" id="soccer-gold-count">0</span>
+    </div>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:16px;">16 ligas de soccer — Solo jugadas con valor matemático real y odds positivos.</p>
+    <div class="cards-grid" id="soccer-gold-grid"></div>
+
+    <div class="section-header">
+      <span class="section-title">🎯 Value Moderado</span>
+      <span class="section-count" id="soccer-silver-count">0</span>
+    </div>
+    <div class="cards-grid" id="soccer-silver-grid"></div>
+  </div>
+
+  <!-- TICKETS -->
+  <div class="tab-content" id="content-tickets">
+    <div class="section-header"><span class="section-title">🎟 Tickets del Día</span></div>
+    <div id="tickets-container"></div>
+  </div>
+
+  <!-- DEBUG -->
+  <div class="tab-content" id="content-debug">
+    <div class="section-header"><span class="section-title">🛠 Estado de Ligas</span></div>
+    <div id="debug-container"></div>
+  </div>
+
+</main>
+
+<script>
+let dashData = null;
+
+// -------------------------------------------------------
+// TABS
+// -------------------------------------------------------
+function showTab(name) {
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+  document.getElementById('content-' + name).classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
+}
+
+// -------------------------------------------------------
+// FETCH DATA
+// -------------------------------------------------------
+async function loadData(forceRefresh = false) {
+  setStatus('loading');
+  showLoading();
+
+  try {
+    const url = '/api/dashboard?sports=ALL' + (forceRefresh ? '&refresh=1' : '');
+    const res = await fetch(url);
+    dashData = await res.json();
+
+    renderAll(dashData);
+    setStatus('live', dashData);
+  } catch (e) {
+    setStatus('error');
+    showError(e.message);
+  }
+}
+
+function setStatus(state, data) {
+  const dot  = document.getElementById('status-dot');
+  const text = document.getElementById('status-text');
+  if (state === 'loading') {
+    dot.className = '';
+    text.textContent = 'Cargando...';
+  } else if (state === 'live') {
+    dot.className = 'live';
+    const total = (data.efficiency_green||[]).length + (data.value_gold||[]).length;
+    text.textContent = `${total} picks · ${new Date().toLocaleTimeString('es', {hour:'2-digit',minute:'2-digit'})}`;
+  } else {
+    dot.className = '';
+    text.textContent = 'Error';
+  }
+}
+
+function showLoading() {
+  ['top-picks-container','efficiency-green-grid','efficiency-blue-grid',
+   'soccer-gold-grid','soccer-silver-grid','tickets-container','debug-container'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = `<div class="loading-overlay"><div class="loading-spinner"></div> Cargando picks...</div>`;
+  });
+}
+
+function showError(msg) {
+  document.getElementById('top-picks-container').innerHTML =
+    `<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-msg">Error: ${msg}</div></div>`;
+}
+
+// -------------------------------------------------------
+// RENDER ALL
+// -------------------------------------------------------
+function renderAll(data) {
+  renderCacheInfo(data);
+  renderDashboard(data);
+  renderGrid('efficiency-green-grid', data.efficiency_green || [], 'eff-green-count');
+  renderGrid('efficiency-blue-grid',  data.efficiency_blue  || [], 'eff-blue-count');
+  renderGrid('soccer-gold-grid',   data.value_gold   || [], 'soccer-gold-count');
+  renderGrid('soccer-silver-grid', data.value_silver || [], 'soccer-silver-count');
+  renderTickets(data);
+  renderDebug(data);
+}
+
+// -------------------------------------------------------
+// CACHE INFO
+// -------------------------------------------------------
+function renderCacheInfo(data) {
+  const sports = data.sports || {};
+  const ttls = Object.values(sports).filter(s => s.ok && s.cache_seconds_left).map(s => s.cache_seconds_left);
+  const minTtl = ttls.length ? Math.min(...ttls) : null;
+  const tz = data.timezone || 'America/New_York';
+
+  document.getElementById('cache-info').innerHTML = `
+    <div class="cache-bar">
+      <span>🕐 ${new Date().toLocaleTimeString('es')}</span>
+      <span>📍 ${tz}</span>
+      ${minTtl ? `<span>♻ Cache: ${Math.floor(minTtl/60)}m ${minTtl%60}s</span>` : ''}
+      <span>⚽ ${Object.keys(sports).filter(k => !['MLB','NBA','NHL'].includes(k) && sports[k].ok).length} ligas soccer OK</span>
+      <span>🏆 ${['MLB','NBA','NHL'].filter(k => sports[k] && sports[k].ok).length} deportes OK</span>
+    </div>
+  `;
+}
+
+// -------------------------------------------------------
+// DASHBOARD
+// -------------------------------------------------------
+function renderDashboard(data) {
+  const green  = data.efficiency_green || [];
+  const gold   = data.value_gold || [];
+
+  let html = '';
+
+  if (green.length > 0) {
+    html += `<div class="section-header"><span class="section-title">🔒 Top Eficiencia</span><span class="section-count">${green.length}</span></div>`;
+    html += `<div class="cards-grid">` + green.slice(0,6).map(renderCard).join('') + `</div>`;
+  }
+
+  if (gold.length > 0) {
+    html += `<div class="section-header" style="margin-top:28px"><span class="section-title">💎 Top Soccer Value</span><span class="section-count">${gold.length}</span></div>`;
+    html += `<div class="cards-grid">` + gold.slice(0,6).map(renderCard).join('') + `</div>`;
+  }
+
+  if (!green.length && !gold.length) {
+    html = `<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-msg">No hay picks disponibles hoy. Intenta más tarde.</div></div>`;
+  }
+
+  document.getElementById('top-picks-container').innerHTML = html;
+}
+
+// -------------------------------------------------------
+// CARD
+// -------------------------------------------------------
+function renderCard(sig) {
+  const color   = sig.color || 'blue';
+  const odds    = sig.odds;
+  const oddsStr = odds != null ? (odds > 0 ? `+${odds}` : `${odds}`) : '--';
+  const oddsClass = odds > 0 ? 'odds-pos' : 'odds-neg';
+  const prob    = sig.probability != null ? sig.probability.toFixed(1) + '%' : '--';
+  const val     = sig.validation  != null ? sig.validation.toFixed(1)  : '--';
+  const ev      = sig.ev != null ? (sig.ev > 0 ? '+' : '') + sig.ev.toFixed(1) + '%' : '--';
+  const game    = sig.game || '';
+  const sel     = sig.selection || '';
+  const label   = sig.label || '';
+  const book    = sig.bookmaker || '';
+  const stake   = sig.stake || '0u';
+  const sport   = sig.sport || sig.market || '';
+
+  return `
+    <div class="card ${color}">
+      <div class="card-top">
+        <span class="card-label">${label}</span>
+        <span class="card-sport">${sport}</span>
+      </div>
+      <div class="card-game">${game}</div>
+      <div class="card-selection">${sel}</div>
+      <div class="card-stats">
+        <div class="stat">
+          <div class="stat-val">${prob}</div>
+          <div class="stat-lbl">Probabilidad</div>
+        </div>
+        <div class="stat">
+          <div class="stat-val">${val}</div>
+          <div class="stat-lbl">Validación</div>
+        </div>
+        <div class="stat">
+          <div class="stat-val">${ev}</div>
+          <div class="stat-lbl">EV%</div>
+        </div>
+      </div>
+      <div class="card-footer">
+        <div class="card-book">📚 ${book}</div>
+        <span class="odds-badge ${oddsClass}">${oddsStr}</span>
+        <span class="card-stake">${stake}</span>
+      </div>
+    </div>
+  `;
+}
+
+// -------------------------------------------------------
+// GRID
+// -------------------------------------------------------
+function renderGrid(containerId, picks, countId) {
+  const el    = document.getElementById(containerId);
+  const count = document.getElementById(countId);
+  if (count) count.textContent = picks.length;
+  if (!picks.length) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-msg">Sin picks en esta categoría hoy.</div></div>`;
+    return;
+  }
+  el.innerHTML = picks.map(renderCard).join('');
+}
+
+// -------------------------------------------------------
+// TICKETS
+// -------------------------------------------------------
+function renderTickets(data) {
+  const tickets = data.tickets || [];
+  const container = document.getElementById('tickets-container');
+
+  if (!tickets.length) {
+    container.innerHTML = `<div class="empty-state"><div class="empty-icon">🎟</div><div class="empty-msg">No hay suficientes picks para generar tickets hoy.</div></div>`;
+    return;
+  }
+
+  container.innerHTML = tickets.map(t => {
+    const picks = (t.picks || []).map(p => {
+      const odds = p.odds;
+      const oddsStr = odds != null ? (odds > 0 ? `+${odds}` : `${odds}`) : '--';
+      const oddsClass = odds > 0 ? 'odds-pos' : 'odds-neg';
+      return `
+        <div class="ticket-pick">
+          <div class="ticket-pick-left">
+            <div class="ticket-pick-game">${p.game || ''} · ${p.sport || ''}</div>
+            <div class="ticket-pick-sel">${p.selection || ''}</div>
+          </div>
+          <div class="ticket-pick-right">
+            <span class="odds-badge ${oddsClass}">${oddsStr}</span>
+            <span style="font-size:12px;color:var(--muted)">${p.probability?.toFixed(1)}%</span>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    return `
+      <div class="ticket-card">
+        <div class="ticket-header">
+          <span class="ticket-title">${t.name || 'Ticket'}</span>
+          <div class="ticket-meta">
+            <span class="ticket-badge ${t.color}">${t.risk || ''}</span>
+            <span style="font-size:12px;color:var(--muted)">${t.reason || ''}</span>
+          </div>
+        </div>
+        <div class="ticket-picks">${picks}</div>
+        <div class="ticket-stats">
+          <div class="ticket-stat">
+            <div class="ticket-stat-val">${t.validation?.toFixed(1)}</div>
+            <div class="ticket-stat-lbl">Validación</div>
+          </div>
+          <div class="ticket-stat">
+            <div class="ticket-stat-val">${t.combined_probability?.toFixed(2)}%</div>
+            <div class="ticket-stat-lbl">Prob. combinada</div>
+          </div>
+          <div class="ticket-stat">
+            <div class="ticket-stat-val">${(t.picks||[]).length}</div>
+            <div class="ticket-stat-lbl">Picks</div>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// -------------------------------------------------------
+// DEBUG
+// -------------------------------------------------------
+function renderDebug(data) {
+  const sports = data.sports || {};
+  const rows = Object.entries(sports).map(([label, s]) => `
+    <tr>
+      <td>${s.ok ? '<span class="dot-ok">●</span>' : '<span class="dot-err">●</span>'} ${label}</td>
+      <td>${s.sport_key || ''}</td>
+      <td>${s.games_count ?? '--'}</td>
+      <td>${s.total_api_games ?? '--'}</td>
+      <td>${s.from_cache ? '♻ Cache' : '🌐 API'}</td>
+      <td>${s.ok ? '' : (s.error || 'Error')}</td>
+    </tr>
+  `).join('');
+
+  document.getElementById('debug-container').innerHTML = `
+    <table class="sports-table">
+      <thead>
+        <tr>
+          <th>Liga</th>
+          <th>API Key</th>
+          <th>Hoy</th>
+          <th>Total</th>
+          <th>Fuente</th>
+          <th>Error</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div style="margin-top:16px">
+      <button class="btn btn-outline" onclick="clearCache()">🗑 Limpiar Cache</button>
+    </div>
+  `;
+}
+
+async function clearCache() {
+  await fetch('/api/clear-cache');
+  loadData(true);
+}
+
+// -------------------------------------------------------
+// INIT
+// -------------------------------------------------------
+loadData();
+// Auto-refresh cada 15 minutos
+setInterval(() => loadData(false), 15 * 60 * 1000);
+</script>
+</body>
+</html>
