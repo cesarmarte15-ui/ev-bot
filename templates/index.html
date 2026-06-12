@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>EV Bot Pro v8.3</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<main class="app">
+
+  <!-- HERO -->
+  <section class="hero shell">
+    <div>
+      <p class="eyebrow">Profit Mode</p>
+      <h1>Pro v8.3</h1>
+      <p class="subtitle">AI-Powered · Análisis real · Props incluidos</p>
+    </div>
+    <div id="status" class="status-pill">Listo</div>
+  </section>
+
+  <!-- CONTROL -->
+  <section class="panel shell">
+    <div class="panel-title">
+      <h2>Control</h2>
+      <button class="ghost" onclick="loadDashboard(false)">Usar cache</button>
+    </div>
+    <div class="sports-grid">
+      {% for label, key in sports.items() %}
+      <label class="sport-card">
+        <input type="checkbox" name="sports" value="{{ label }}" checked>
+        <span>{{ label }}</span>
+      </label>
+      {% endfor %}
+    </div>
+    <div class="button-grid">
+      <button class="primary blue-btn"  onclick="loadDashboard(false)">Buscar picks</button>
+      <button class="primary red-btn"   onclick="loadDashboard(true)">Actualizar odds</button>
+      <button class="primary black-btn" onclick="loadDebug()">Diagnóstico</button>
+    </div>
+    <p class="hint">Claude analiza lesiones, forma y H2H en tiempo real para cada partido.</p>
+  </section>
+
+  <!-- RESUMEN -->
+  <section class="panel shell">
+    <div class="panel-title"><h2>Resumen</h2></div>
+    <div id="summary" class="summary-grid">
+      <div class="summary-card">Sin datos todavía</div>
+    </div>
+  </section>
+
+  <!-- 3 JUGADAS DE ORO -->
+  <section class="panel shell important">
+    <div class="panel-title"><h2>💎 3 Jugadas de Oro</h2></div>
+    <div id="goldPicks" class="results">
+      <div class="empty-card">Presiona Buscar picks.</div>
+    </div>
+  </section>
+
+  <!-- PICKS DEL DÍA -->
+  <section class="panel shell">
+    <div class="panel-title"><h2>🎯 Picks del Día</h2></div>
+    <div id="picksDia" class="results">
+      <div class="empty-card">Sin picks todavía.</div>
+    </div>
+  </section>
+
+  <!-- PROPS DESTACADOS -->
+  <section class="panel shell">
+    <div class="panel-title"><h2>📈 Props Destacados</h2></div>
+    <div id="playerProps" class="results">
+      <div class="empty-card">Sin props todavía.</div>
+    </div>
+  </section>
+
+  <!-- PARLAYS -->
+  <section class="panel shell ticket-zone">
+    <div class="panel-title"><h2>🎟️ Parlays</h2></div>
+    <div id="parlays" class="results">
+      <div class="empty-card">Sin parlays todavía.</div>
+    </div>
+  </section>
+
+  <!-- ANÁLISIS POR PARTIDO -->
+  <section class="panel shell">
+    <div class="panel-title"><h2>📊 Análisis por Partido</h2></div>
+    <div id="games" class="results">
+      <div class="empty-card">Sin datos todavía.</div>
+    </div>
+  </section>
+
+</main>
+
+<script>
+// ── Helpers ────────────────────────────────────────────────────────────────
+function qs(sel) { return document.querySelector(sel); }
+function selectedSportsQuery() {
+  return [...document.querySelectorAll("input[name='sports']:checked")]
+    .map(x => "sports=" + encodeURIComponent(x.value)).join("&");
+}
+function safeText(v, f = "") {
+  if (v === null || v === undefined) return f;
+  if (typeof v === "object") return v.selection || v.name || f;
+  return String(v);
+}
+function safeNum(v, f = "N/D") {
+  if (v === null || v === undefined || Number.isNaN(Number(v))) return f;
+  return v;
+}
+function colorClass(sig) { return sig.color || "red"; }
+
+// ── Tarjeta de pick ────────────────────────────────────────────────────────
+function signalCard(sig, idx, titleOverride) {
+  const evLine = (sig.ev !== null && sig.ev !== undefined)
+    ? `• EV ${sig.ev}% • Edge ${sig.edge}%` : "";
+  const bookCount = sig.book_count ? `• ${sig.book_count} libros` : "";
+  return `
+  <article class="pick-card ${colorClass(sig)}">
+    <div class="rank">${titleOverride || "#" + (idx + 1)}</div>
+    <div class="pick-body">
+      <div class="pick-top">
+        <span class="badge">${safeText(sig.sport || sig.short_market || sig.market, "Pick")}</span>
+        <span class="confidence">${safeText(sig.label, "N/D")}</span>
+      </div>
+      <h3>${safeText(sig.selection, "Sin selección")}</h3>
+      <p>${safeText(sig.game, "")}</p>
+      <div class="tag-row">
+        <span>${safeText(sig.premium_tag, "📌 Pick")}</span>
+        <span>Score ${safeNum(sig.confidence_score)}/10</span>
+      </div>
+      <div class="metrics">
+        <span>Validación <b>${safeNum(sig.validation)}%</b></span>
+        <span>Prob. <b>${safeNum(sig.probability)}%</b></span>
+        <span>Odds <b>${safeNum(sig.odds)}</b></span>
+      </div>
+      <small><b>Motivo:</b> ${safeText(sig.reason, "")}</small>
+      <small><b>Alerta:</b> ${safeText(sig.sharp_warning, "")}</small>
+      <small class="details">
+        ${safeText(sig.short_market || sig.market, "")} •
+        Stake ${safeText(sig.stake, "N/D")} •
+        Casa ${safeText(sig.bookmaker, "N/D")}
+        ${bookCount} ${evLine}
+      </small>
+    </div>
+  </article>`;
+}
+
+// ── Tarjeta de parlay ──────────────────────────────────────────────────────
+function parlayCard(t) {
+  if (!t) return "";
+  const picks = (t.picks || []).map((x, i) => `
+    <li>
+      <b>${i + 1}. ${safeText(x.selection)}</b>
+      <small>${safeText(x.game)} • ${safeText(x.short_market)} • ${safeNum(x.probability)}% • Odds ${safeNum(x.odds)}</small>
+    </li>`).join("");
+  return `
+  <article class="ticket-card blue">
+    <div class="ticket-head">
+      <div>
+        <span class="badge">Parlay</span>
+        <h3>${safeText(t.name)}</h3>
+      </div>
+      <div class="ticket-score">
+        <b>${safeNum(t.validation)}%</b>
+        <small>Validación</small>
+      </div>
+    </div>
+    <div class="metrics">
+      <span>Picks <b>${(t.picks || []).length}</b></span>
+      <span>Prob. comb. <b>${safeNum(t.combined_probability)}%</b></span>
+    </div>
+    <ul class="parlay-list">${picks}</ul>
+  </article>`;
+}
+
+// ── Tarjeta de análisis de partido ────────────────────────────────────────
+function gameCard(g) {
+  const mlCards = (g.ml_signals || []).slice(0, 2).map((s, i) =>
+    signalCard({...s, game: g.game}, i, ["LOCAL", "VISIT"][i] || "ML")
+  ).join("");
+
+  const altTop = (g.alt_signals || []).filter(s => s.color !== "red").slice(0, 2).map((s, i) =>
+    signalCard({...s, game: g.game}, i, s.short_market)
+  ).join("");
+
+  const propsHtml = (g.player_props || []).map((p, i) =>
+    signalCard({...p}, i, "PROP")
+  ).join("");
+
+  const aiBox = g.ai_analysis ? `
+    <div class="prediction-box">
+      <span>🤖 Análisis IA</span>
+      <small>${safeText(g.ai_analysis)}</small>
+    </div>` : "";
+
+  return `
+  <article class="game-card">
+    <div class="game-title">
+      <span class="badge">${safeText(g.sport)}</span>
+      <h3>${safeText(g.game)}</h3>
+      <p>⏰ ${safeText(g.start_time)}</p>
+    </div>
+    ${aiBox}
+    <div class="section-label">Moneyline</div>
+    <div class="two-picks">${mlCards || '<p class="hint">Sin señales ML</p>'}</div>
+    ${altTop ? `<div class="section-label">Spread / Total</div><div class="two-picks">${altTop}</div>` : ""}
+    ${propsHtml ? `<div class="section-label">Props</div><div class="two-picks">${propsHtml}</div>` : ""}
+  </article>`;
+}
+
+// ── Fetch ──────────────────────────────────────────────────────────────────
+async function fetchJSON(url) {
+  const res = await fetch(url);
+  const txt = await res.text();
+  try {
+    const data = JSON.parse(txt);
+    if (!res.ok) throw new Error(data.error || txt.slice(0, 180));
+    return data;
+  } catch (e) {
+    throw new Error(txt.slice(0, 220));
+  }
+}
+
+// ── Carga principal ────────────────────────────────────────────────────────
+async function loadDashboard(force) {
+  const status = qs("#status");
+  status.textContent = force ? "Actualizando..." : "Analizando...";
+  for (const id of ["goldPicks","picksDia","playerProps","parlays","games"])
+    qs("#" + id).innerHTML = '<div class="loading">Consultando datos...</div>';
+
+  try {
+    const data = await fetchJSON(`/api/dashboard?${selectedSportsQuery()}&refresh=${force ? 1 : 0}`);
+    const gCount = (data.games || []).length;
+    const warnCount = (data.warnings || []).length;
+    status.textContent = `${gCount} partido${gCount !== 1 ? "s" : ""}${warnCount ? " ⚠" : ""}`;
+
+    // Resumen
+    qs("#summary").innerHTML = Object.entries(data.sports || {}).map(([sport, info]) => `
+      <div class="summary-card">
+        <span>${sport}</span>
+        <b>${info.games_count ?? 0} partidos hoy</b>
+        <small>${info.from_cache ? "Desde cache" : "API nueva"}
+          ${info.cache_seconds_left ? "• " + info.cache_seconds_left + "s" : ""}
+        </small>
+        ${info.error ? `<small class="error">${safeText(info.error)}</small>` : ""}
+      </div>`).join("") || '<div class="summary-card">Sin datos.</div>';
+
+    if (warnCount) {
+      qs("#summary").innerHTML += `<div class="summary-card">
+        <span style="color:#f87171">⚠ Advertencias</span>
+        ${data.warnings.map(w => `<small>${safeText(w)}</small>`).join("")}
+      </div>`;
+    }
+
+    // 3 Jugadas de Oro
+    qs("#goldPicks").innerHTML = (data.gold_picks || []).length
+      ? data.gold_picks.map((p, i) => signalCard(p, i, ["🥇","🥈","🥉"][i])).join("")
+      : '<div class="empty-card">No hay jugadas de oro hoy — mercado sin valor claro.</div>';
+
+    // Picks del día
+    qs("#picksDia").innerHTML = (data.picks_del_dia || []).length
+      ? data.picks_del_dia.map((p, i) => signalCard(p, i)).join("")
+      : '<div class="empty-card">Sin picks del día.</div>';
+
+    // Props
+    qs("#playerProps").innerHTML = (data.player_props || []).length
+      ? data.player_props.map((p, i) => signalCard(p, i, "PROP")).join("")
+      : '<div class="empty-card">Sin props destacados hoy.</div>';
+
+    // Parlays
+    const p3 = parlayCard(data.parlay_3);
+    const p6 = parlayCard(data.parlay_6);
+    qs("#parlays").innerHTML = (p3 || p6)
+      ? (p3 + p6)
+      : '<div class="empty-card">No hay suficientes picks para parlays.</div>';
+
+    // Análisis por partido
+    qs("#games").innerHTML = (data.games || []).length
+      ? data.games.map(gameCard).join("")
+      : '<div class="empty-card">No hay partidos disponibles.</div>';
+
+  } catch (e) {
+    status.textContent = "Error";
+    qs("#goldPicks").innerHTML = `<div class="empty-card">Error: ${safeText(e.message || e)}</div>`;
+  }
+}
+
+// ── Debug ──────────────────────────────────────────────────────────────────
+async function loadDebug() {
+  try {
+    const data = await fetchJSON("/api/debug");
+    qs("#summary").innerHTML = `<pre class="raw">${JSON.stringify(data, null, 2)}</pre>`;
+    qs("#status").textContent = "Debug OK";
+  } catch (e) {
+    qs("#summary").innerHTML = `<div class="empty-card">Error: ${safeText(e.message || e)}</div>`;
+    qs("#status").textContent = "Error";
+  }
+}
+</script>
+</body>
+</html>
