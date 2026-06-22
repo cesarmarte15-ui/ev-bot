@@ -44,7 +44,7 @@ def api_soccer():
     """Solo picks de soccer value."""
     try:
         force = request.args.get("refresh", "0") == "1"
-        data  = get_dashboard(["ALL"], force_refresh=force)
+        data  = get_dashboard(["MLS", "Brasileirao", "Argentina", "Mexico"], force_refresh=force)
         return jsonify({
             "ok":           True,
             "value_gold":   data.get("value_gold", []),

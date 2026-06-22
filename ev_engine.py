@@ -608,34 +608,36 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
             dash["warnings"].append(f"{label}: {e}")
 
     # --- Soccer value via The Odds API (ligas activas en junio) ---
-    for label, key in SPORTS_SOCCER.items():
-        try:
-            games, from_cache, ttl = fetch_odds(key, force_refresh=force_refresh)
-            total = len(games)
-            games = [g for g in games if is_game_today(g)]
-            if not games:
+    _soccer_labels = set(SPORTS_SOCCER.keys())
+    if "SOCCER" in selected_sports or bool(_soccer_labels.intersection(selected_sports)):
+        for label, key in SPORTS_SOCCER.items():
+            try:
+                games, from_cache, ttl = fetch_odds(key, force_refresh=force_refresh)
+                total = len(games)
+                games = [g for g in games if is_game_today(g)]
+                if not games:
+                    dash["sports"][label] = {
+                        "ok": True, "sport_key": key,
+                        "games_count": 0, "total_api_games": total,
+                        "from_cache": from_cache, "cache_seconds_left": ttl,
+                    }
+                    continue
                 dash["sports"][label] = {
                     "ok": True, "sport_key": key,
-                    "games_count": 0, "total_api_games": total,
+                    "games_count": len(games), "total_api_games": total,
                     "from_cache": from_cache, "cache_seconds_left": ttl,
                 }
-                continue
-            dash["sports"][label] = {
-                "ok": True, "sport_key": key,
-                "games_count": len(games), "total_api_games": total,
-                "from_cache": from_cache, "cache_seconds_left": ttl,
-            }
-            for g in games:
-                pred = game_prediction_soccer(g, label)
-                for sig in pred.get("signals", []):
-                    entry = {**sig, "game": pred["game"], "start_time": pred["start_time"]}
-                    if sig.get("color") == "gold":
-                        dash["value_gold"].append(entry)
-                    elif sig.get("color") == "silver":
-                        dash["value_silver"].append(entry)
-        except Exception as e:
-            logger.warning("Soccer %s: %s", label, e)
-            dash["sports"][label] = {"ok": False, "sport_key": key, "error": str(e)}
+                for g in games:
+                    pred = game_prediction_soccer(g, label)
+                    for sig in pred.get("signals", []):
+                        entry = {**sig, "game": pred["game"], "start_time": pred["start_time"]}
+                        if sig.get("color") == "gold":
+                            dash["value_gold"].append(entry)
+                        elif sig.get("color") == "silver":
+                            dash["value_silver"].append(entry)
+            except Exception as e:
+                logger.warning("Soccer %s: %s", label, e)
+                dash["sports"][label] = {"ok": False, "sport_key": key, "error": str(e)}
 
     # Ordenar y limitar
     sorter_eff = lambda x: (x.get("validation", 0), x.get("probability", 0))
