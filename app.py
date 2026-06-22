@@ -69,6 +69,22 @@ def api_efficiency():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
+@app.route("/api/games")
+def api_games():
+    """Todos los juegos con evaluación ML/Spread/Total."""
+    try:
+        selected = request.args.getlist("sports") or ["ALL"]
+        force    = request.args.get("refresh", "0") == "1"
+        data     = get_dashboard(selected, force_refresh=force)
+        return jsonify({
+            "ok":        True,
+            "all_games": data.get("all_games", []),
+            "avoid":     data.get("avoid", []),
+        })
+    except Exception as e:
+        logger.error("Games error: %s", e, exc_info=True)
+        return jsonify({"ok": False, "error": str(e)}), 500
+
 @app.route("/api/debug")
 def api_debug():
     try:
@@ -83,7 +99,7 @@ def api_clear_cache():
 
 @app.route("/health")
 def health():
-    return jsonify({"ok": True, "version": "8.3"})
+    return jsonify({"ok": True, "version": "8.4"})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))

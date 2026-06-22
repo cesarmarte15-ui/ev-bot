@@ -1,5 +1,5 @@
 """
-ev_engine_v8.3.py
+ev_engine_v8.4.py
 - Soccer: ligas disponibles en The Odds API (gratis), filtro de VALUE alto (odds >= +150)
 - MLB/NBA/NHL: modo EFICIENCIA - favoritos sólidos, difícil perder
 - Dashboard separado por categoría: value_soccer / efficiency_picks
@@ -456,6 +456,97 @@ def moneyline_soccer_value(game: dict, sport: str) -> list[dict]:
     return sorted(signals, key=lambda x: (x.get("ev") or 0, x["odds"]), reverse=True)
 
 # ---------------------------------------------------------------------------
+# Señales Spread y Total - EFICIENCIA
+# ---------------------------------------------------------------------------
+def spread_signals(game: dict, sport: str) -> list[dict]:
+    outs = get_market_outcomes(game, "spreads")
+    if not outs:
+        return []
+    fair, counts = no_vig_h2h_probabilities(outs)
+    signals = []
+    for name, p in fair.items():
+        best = best_price_filtered(outs, name, p)
+        if not best:
+            continue
+        point = best.get("point")
+        odds  = best["american_odds"]
+        prob  = round(clamp(p * 100, *PROB_CLAMP), 1)
+        ev, edge = safe_ev_edge(p, odds)
+        val   = smooth_validation(prob, odds, counts.get(name, 0), ev, edge)
+        color, label, reason, stake = classify_efficiency(prob, val, ev, edge, odds)
+        fd_odds   = fanduel_price(outs, name, point)
+        point_str = (f"+{point}" if (point or 0) > 0 else str(point)) if point is not None else ""
+        signals.append(enrich({
+            "mode":              "efficiency",
+            "sport":             sport,
+            "market":            "Spread",
+            "short_market":      "SPR",
+            "selection":         f"{name} {point_str}".strip(),
+            "probability":       prob,
+            "validation":        val,
+            "color":             color,
+            "label":             label,
+            "reason":            reason,
+            "stake":             stake,
+            "ev":                ev,
+            "edge":              edge,
+            "odds":              odds,
+            "decimal_odds":      best["decimal_odds"],
+            "bookmaker":         best["bookmaker"],
+            "book_count":        counts.get(name, 0),
+            "is_primary":        False,
+            "fanduel_odds":      fd_odds,
+            "fanduel_available": fd_odds is not None,
+            "point":             point,
+        }))
+    return sorted(signals, key=lambda x: (x["validation"], x["probability"]), reverse=True)
+
+
+def total_signals(game: dict, sport: str) -> list[dict]:
+    outs = get_market_outcomes(game, "totals")
+    if not outs:
+        return []
+    fair, counts = no_vig_h2h_probabilities(outs)
+    signals = []
+    for name, p in fair.items():
+        best = best_price_filtered(outs, name, p)
+        if not best:
+            continue
+        point = best.get("point")
+        odds  = best["american_odds"]
+        prob  = round(clamp(p * 100, *PROB_CLAMP), 1)
+        ev, edge = safe_ev_edge(p, odds)
+        val   = smooth_validation(prob, odds, counts.get(name, 0), ev, edge)
+        color, label, reason, stake = classify_efficiency(prob, val, ev, edge, odds)
+        fd_odds   = fanduel_price(outs, name, point)
+        point_str = str(point) if point is not None else ""
+        signals.append(enrich({
+            "mode":              "efficiency",
+            "sport":             sport,
+            "market":            "Total",
+            "short_market":      "TOT",
+            "selection":         f"{name} {point_str}".strip(),
+            "probability":       prob,
+            "validation":        val,
+            "color":             color,
+            "label":             label,
+            "reason":            reason,
+            "stake":             stake,
+            "ev":                ev,
+            "edge":              edge,
+            "odds":              odds,
+            "decimal_odds":      best["decimal_odds"],
+            "bookmaker":         best["bookmaker"],
+            "book_count":        counts.get(name, 0),
+            "is_primary":        False,
+            "fanduel_odds":      fd_odds,
+            "fanduel_available": fd_odds is not None,
+            "point":             point,
+        }))
+    return sorted(signals, key=lambda x: (x["validation"], x["probability"]), reverse=True)
+
+
+# ---------------------------------------------------------------------------
 # Predicción por juego
 # ---------------------------------------------------------------------------
 def game_prediction_efficiency(game: dict, sport: str) -> dict:
@@ -486,6 +577,47 @@ def game_prediction_soccer(game: dict, sport: str) -> dict:
         "best_bet":   signals[0] if signals else None,
         "mode":       "value",
     }
+
+# ---------------------------------------------------------------------------
+# Mejor mercado y predicción completa (v8.4)
+# ---------------------------------------------------------------------------
+def best_market(ml: Optional[dict], spread: Optional[dict], total: Optional[dict]) -> Optional[dict]:
+    candidates = [(n, s) for n, s in [("Moneyline", ml), ("Spread", spread), ("Total", total)] if s]
+    if not candidates:
+        return None
+    good = [(n, s) for n, s in candidates if s.get("color") in ("green", "blue")]
+    pool = good if good else candidates
+    pool.sort(key=lambda x: (x[1].get("validation", 0), x[1].get("ev") or 0), reverse=True)
+    best_name, best_sig = pool[0]
+    return {
+        **best_sig,
+        "recommended_market": best_name,
+        "reason": f"{best_name} — Val {best_sig.get('validation')}% / EV {best_sig.get('ev')}%",
+    }
+
+
+def game_prediction_full(game: dict, sport: str) -> dict:
+    name   = f"{game.get('away_team')} vs {game.get('home_team')}"
+    ml     = moneyline_efficiency(game, sport)
+    spread = spread_signals(game, sport)
+    total  = total_signals(game, sport)
+    return {
+        "sport":       sport,
+        "game":        name,
+        "home_team":   game.get("home_team"),
+        "away_team":   game.get("away_team"),
+        "start_time":  game.get("commence_time"),
+        "ml":          ml,
+        "spread":      spread,
+        "total":       total,
+        "best_market": best_market(
+            ml[0]     if ml     else None,
+            spread[0] if spread else None,
+            total[0]  if total  else None,
+        ),
+        "mode":        "full",
+    }
+
 
 # ---------------------------------------------------------------------------
 # Tickets
@@ -553,16 +685,17 @@ def build_ticket(name: str, pool: list, count: int, ok_fn, color: str, risk: str
     }
 
 # ---------------------------------------------------------------------------
-# Dashboard principal v8.3
+# Dashboard principal v8.4
 # ---------------------------------------------------------------------------
 def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
     dash: dict = {
-        "mode":             "Pro v8.3 - Efficiency + Soccer Value",
+        "mode":             "Pro v8.4 - Full Market Analysis",
         "cache_ttl_seconds": CACHE_TTL,
         "only_today":       ONLY_TODAY,
         "timezone":         LOCAL_TZ,
         "sports":           {},
         "games":            [],
+        "all_games":        [],
 
         # Eficiencia (MLB/NBA/NHL) - difícil perder
         "efficiency_green": [],   # 🔒 Sólidos
@@ -571,6 +704,9 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
         # Soccer - value/odds altos
         "value_gold":   [],       # 💎 Value Alto
         "value_silver": [],       # 🎯 Value
+
+        # Picks a evitar
+        "avoid": [],
 
         # Tickets
         "ticket_efficiency": None,
@@ -593,15 +729,26 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
                 "from_cache": from_cache, "cache_seconds_left": ttl,
             }
             for g in games:
-                pred = game_prediction_efficiency(g, label)
+                full = game_prediction_full(g, label)
+                dash["all_games"].append(full)
+                bb = full["ml"][0] if full["ml"] else None
+                pred = {
+                    "sport": label, "game": full["game"],
+                    "home_team": full["home_team"], "away_team": full["away_team"],
+                    "start_time": full["start_time"],
+                    "best_bet": bb, "signals": full["ml"], "mode": "efficiency",
+                }
                 dash["games"].append(pred)
-                bb = pred.get("best_bet")
                 if bb:
-                    entry = {**bb, "game": pred["game"], "start_time": pred["start_time"]}
+                    entry = {**bb, "game": full["game"], "start_time": full["start_time"]}
                     if bb.get("color") == "green":
                         dash["efficiency_green"].append(entry)
                     elif bb.get("color") == "blue":
                         dash["efficiency_blue"].append(entry)
+                for mkey in ("ml", "spread", "total"):
+                    for sig in full.get(mkey, []):
+                        if sig.get("color") == "red":
+                            dash["avoid"].append({**sig, "game": full["game"], "start_time": full["start_time"]})
         except Exception as e:
             logger.error("Error %s: %s", label, e, exc_info=True)
             dash["sports"][label] = {"ok": False, "sport_key": key, "error": str(e)}
@@ -671,6 +818,22 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
         "green", "Alto", "Los 10 picks de mayor probabilidad del día."
     )
 
+    # Parlay tickets (3/6/10 legs) — ML + Spread + Total
+    _parlay_pool = []
+    for _g in dash["all_games"]:
+        for _mkey in ("ml", "spread", "total"):
+            for _sig in _g.get(_mkey, []):
+                if _sig.get("color") in ("green", "blue"):
+                    _parlay_pool.append({**_sig, "game": _g["game"], "start_time": _g["start_time"]})
+    _parlay_pool = dedupe(_parlay_pool)
+    _parlay_pool.sort(key=lambda x: x.get("probability", 0), reverse=True)
+    dash["ticket_3"]  = build_ticket("🎯 Parlay 3 Legs",  _parlay_pool, 3,  ticket_ok_efficiency, "green", "Bajo",  "3 mejores picks del día.")
+    dash["ticket_6"]  = build_ticket("🔥 Parlay 6 Legs",  _parlay_pool, 6,  ticket_ok_efficiency, "blue",  "Medio", "6 mejores picks del día.")
+    dash["ticket_10"] = build_ticket("⭐ Parlay 10 Legs", _parlay_pool, 10, ticket_ok_mega,        "gold",  "Alto",  "10 mejores picks del día.")
+
+    # Deduplicar avoid
+    dash["avoid"] = dedupe(dash["avoid"])
+
     # Picks de alta probabilidad (≥65%) — eficiencia, ordenados por probabilidad
     all_eff = dedupe(dash["efficiency_green"] + dash["efficiency_blue"])
     dash["high_prob"] = sorted(
@@ -684,7 +847,10 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
     dash["blue"]       = dash["efficiency_blue"]
     dash["red"]        = []
     dash["top_profit"] = dash["value_gold"][:3]
-    dash["tickets"]    = [t for t in [dash["ticket_efficiency"], dash["ticket_value"], dash["ticket_mega"]] if t]
+    dash["tickets"]    = [t for t in [
+        dash["ticket_efficiency"], dash["ticket_value"], dash["ticket_mega"],
+        dash["ticket_3"], dash["ticket_6"], dash["ticket_10"],
+    ] if t]
 
     return dash
 
