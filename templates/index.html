@@ -1,301 +1,1042 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="utf-8">
-  <title>EV Bot Pro v8.3</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <link rel="stylesheet" href="/static/style.css">
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>EV Bot Pro v8.3</title>
+<style>
+  :root {
+    --bg:        #0d0f14;
+    --bg2:       #151820;
+    --bg3:       #1c2030;
+    --border:    #252a3a;
+    --text:      #e2e8f0;
+    --muted:     #64748b;
+    --green:     #22c55e;
+    --green-dim: #14532d;
+    --blue:      #3b82f6;
+    --blue-dim:  #1e3a5f;
+    --gold:      #f59e0b;
+    --gold-dim:  #451a03;
+    --silver:    #94a3b8;
+    --silver-dim:#1e293b;
+    --red:       #ef4444;
+    --radius:    10px;
+    --font:      'Inter', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    min-height: 100vh;
+  }
+
+  /* HEADER */
+  header {
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .logo { display: flex; align-items: center; gap: 10px; }
+  .logo-icon { font-size: 22px; }
+  .logo-text { font-size: 16px; font-weight: 700; letter-spacing: -0.3px; }
+  .version-badge {
+    background: var(--gold-dim);
+    color: var(--gold);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 20px;
+    border: 1px solid var(--gold);
+  }
+  .header-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .btn {
+    padding: 8px 16px;
+    border-radius: var(--radius);
+    border: none;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+  .btn:hover { opacity: 0.85; }
+  .btn-primary { background: var(--blue); color: #fff; }
+  .btn-outline { background: transparent; color: var(--text); border: 1px solid var(--border); }
+  #status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--muted);
+    display: inline-block;
+  }
+  #status-dot.live { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  #status-text { font-size: 12px; color: var(--muted); }
+
+  /* TABS */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    padding: 16px 24px 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg2);
+    overflow-x: auto;
+  }
+  .tab {
+    padding: 10px 18px;
+    border-radius: var(--radius) var(--radius) 0 0;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid transparent;
+    border-bottom: none;
+    color: var(--muted);
+    background: transparent;
+    white-space: nowrap;
+    transition: all 0.15s;
+  }
+  .tab.active {
+    background: var(--bg);
+    color: var(--text);
+    border-color: var(--border);
+    border-bottom-color: var(--bg);
+  }
+  .tab:hover:not(.active) { color: var(--text); }
+
+  /* MAIN */
+  main { padding: 24px; max-width: 1400px; margin: 0 auto; }
+
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* SECTION HEADERS */
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+    margin-top: 28px;
+  }
+  .section-header:first-child { margin-top: 0; }
+  .section-title { font-size: 15px; font-weight: 700; }
+  .section-count {
+    background: var(--bg3);
+    color: var(--muted);
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 20px;
+  }
+
+  /* CARDS GRID */
+  .cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 14px;
+    margin-bottom: 8px;
+  }
+
+  .card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.15s;
+  }
+  .card:hover { border-color: #3a4060; }
+
+  /* Color accents */
+  .card.green  { border-left: 3px solid var(--green); }
+  .card.blue   { border-left: 3px solid var(--blue); }
+  .card.gold   { border-left: 3px solid var(--gold); }
+  .card.silver { border-left: 3px solid var(--silver); }
+  .card.red    { border-left: 3px solid var(--red); opacity: 0.6; }
+
+  .card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 10px;
+    gap: 8px;
+  }
+  .card-label {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 6px;
+    white-space: nowrap;
+  }
+  .green  .card-label { background: var(--green-dim); color: var(--green); }
+  .blue   .card-label { background: var(--blue-dim);  color: var(--blue); }
+  .gold   .card-label { background: var(--gold-dim);  color: var(--gold); }
+  .silver .card-label { background: var(--silver-dim);color: var(--silver); }
+
+  .card-sport {
+    font-size: 11px;
+    color: var(--muted);
+    background: var(--bg3);
+    padding: 3px 8px;
+    border-radius: 6px;
+  }
+  .card-game {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 6px;
+    line-height: 1.4;
+  }
+  .card-selection {
+    font-size: 15px;
+    font-weight: 700;
+    margin-bottom: 10px;
+    color: var(--text);
+  }
+
+  .card-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .stat {
+    background: var(--bg3);
+    border-radius: 7px;
+    padding: 8px;
+    text-align: center;
+  }
+  .stat-val { font-size: 16px; font-weight: 700; }
+  .stat-lbl { font-size: 10px; color: var(--muted); margin-top: 2px; }
+  .green  .stat-val { color: var(--green); }
+  .blue   .stat-val { color: var(--blue); }
+  .gold   .stat-val { color: var(--gold); }
+  .silver .stat-val { color: var(--silver); }
+
+  .card-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .card-book { display: flex; align-items: center; gap: 4px; }
+  .card-stake {
+    font-weight: 600;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 5px;
+    background: var(--bg3);
+  }
+
+  /* ODDS badge */
+  .odds-badge {
+    font-size: 13px;
+    font-weight: 800;
+    font-family: 'Courier New', monospace;
+  }
+  .odds-pos { color: var(--gold); }
+  .odds-neg { color: var(--silver); }
+
+  /* TICKET */
+  .ticket-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    margin-bottom: 14px;
+  }
+  .ticket-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .ticket-title { font-size: 15px; font-weight: 700; }
+  .ticket-meta { display: flex; gap: 8px; flex-wrap: wrap; }
+  .ticket-badge {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 20px;
+    border: 1px solid;
+  }
+  .ticket-badge.green  { color: var(--green);  border-color: var(--green);  background: var(--green-dim); }
+  .ticket-badge.gold   { color: var(--gold);   border-color: var(--gold);   background: var(--gold-dim); }
+  .ticket-picks { display: flex; flex-direction: column; gap: 8px; }
+  .ticket-pick {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--bg3);
+    border-radius: 7px;
+    padding: 10px 14px;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .ticket-pick-left { flex: 1; min-width: 0; }
+  .ticket-pick-game { font-size: 11px; color: var(--muted); }
+  .ticket-pick-sel  { font-size: 13px; font-weight: 600; }
+  .ticket-pick-right { display: flex; align-items: center; gap: 8px; }
+  .ticket-stats {
+    display: flex;
+    gap: 16px;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  .ticket-stat { text-align: center; }
+  .ticket-stat-val { font-size: 18px; font-weight: 700; color: var(--gold); }
+  .ticket-stat-lbl { font-size: 11px; color: var(--muted); }
+
+  /* SPORTS TABLE */
+  .sports-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin-bottom: 24px;
+  }
+  .sports-table th {
+    text-align: left;
+    padding: 10px 14px;
+    color: var(--muted);
+    font-weight: 600;
+    border-bottom: 1px solid var(--border);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .sports-table td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .sports-table tr:last-child td { border-bottom: none; }
+  .dot-ok  { color: var(--green); }
+  .dot-err { color: var(--red); }
+
+  /* EMPTY / LOADING */
+  .empty-state {
+    text-align: center;
+    padding: 48px 24px;
+    color: var(--muted);
+  }
+  .empty-icon { font-size: 40px; margin-bottom: 12px; }
+  .empty-msg  { font-size: 14px; }
+
+  .loading-spinner {
+    display: inline-block;
+    width: 20px; height: 20px;
+    border: 2px solid var(--border);
+    border-top-color: var(--blue);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .loading-overlay {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 48px;
+    color: var(--muted);
+    font-size: 14px;
+  }
+
+  /* CACHE BAR */
+  .cache-bar {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+    font-size: 12px;
+    color: var(--muted);
+    flex-wrap: wrap;
+  }
+  .cache-bar span { display: flex; align-items: center; gap: 5px; }
+
+  /* FANDUEL PICK */
+  .fd-pick {
+    background: #05111f;
+    border: 1px solid #1d3461;
+    border-radius: 7px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .fd-pick-label {
+    font-size: 10px;
+    font-weight: 700;
+    color: #38bdf8;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 3px;
+  }
+  .fd-pick-text {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text);
+    font-family: 'Courier New', monospace;
+    word-break: break-word;
+  }
+  .fd-no-odds {
+    font-size: 11px;
+    color: #f59e0b;
+  }
+  .btn-copy {
+    flex-shrink: 0;
+    background: transparent;
+    border: 1px solid #1d3461;
+    color: #38bdf8;
+    padding: 5px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s;
+  }
+  .btn-copy:hover { background: #0c1f38; }
+  .btn-copy.copied { border-color: var(--green); color: var(--green); }
+
+  /* HIGH PROB RANKED LIST */
+  .prob-list { display: flex; flex-direction: column; gap: 8px; }
+  .prob-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    transition: border-color 0.15s;
+  }
+  .prob-row:hover { border-color: #3a4060; }
+  .prob-rank {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--muted);
+    min-width: 22px;
+    text-align: center;
+  }
+  .prob-circle {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 12px;
+    font-weight: 800;
+    line-height: 1.1;
+    text-align: center;
+    border: 2px solid;
+  }
+  .prob-circle.tier-a { border-color: var(--green); color: var(--green); background: var(--green-dim); }
+  .prob-circle.tier-b { border-color: var(--blue);  color: var(--blue);  background: var(--blue-dim); }
+  .prob-info { flex: 1; min-width: 0; }
+  .prob-sel  { font-size: 15px; font-weight: 700; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .prob-game { font-size: 11px; color: var(--muted); margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .prob-bar-wrap { height: 3px; background: var(--bg3); border-radius: 2px; overflow: hidden; }
+  .prob-bar-fill { height: 100%; border-radius: 2px; }
+  .prob-bar-fill.tier-a { background: var(--green); }
+  .prob-bar-fill.tier-b { background: var(--blue); }
+  .prob-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .prob-fd-line {
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    color: #38bdf8;
+    text-align: right;
+  }
+  .prob-badges { display: flex; gap: 6px; align-items: center; }
+  @media (max-width: 600px) {
+    .prob-row { gap: 10px; padding: 12px; }
+    .prob-circle { width: 46px; height: 46px; font-size: 11px; }
+    .prob-fd-line { font-size: 10px; }
+  }
+
+  /* TICKET COPY */
+  .btn-copy-parlay {
+    background: #05111f;
+    border: 1px solid #1d3461;
+    color: #38bdf8;
+    padding: 7px 14px;
+    border-radius: 7px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn-copy-parlay:hover { background: #0c1f38; }
+  .btn-copy-parlay.copied { border-color: var(--green); color: var(--green); }
+
+  /* RESPONSIVE */
+  @media (max-width: 600px) {
+    main { padding: 14px; }
+    .cards-grid { grid-template-columns: 1fr; }
+    .tabs { padding: 12px 14px 0; }
+    header { padding: 12px 14px; }
+  }
+</style>
 </head>
 <body>
-<main class="app">
 
-  <!-- HERO -->
-  <section class="hero shell">
-    <div>
-      <p class="eyebrow">Profit Mode</p>
-      <h1>Pro v8.3</h1>
-      <p class="subtitle">AI-Powered · Análisis real · Props incluidos</p>
-    </div>
-    <div id="status" class="status-pill">Listo</div>
-  </section>
+<header>
+  <div class="logo">
+    <span class="logo-icon">📊</span>
+    <span class="logo-text">EV Bot Pro</span>
+    <span class="version-badge">v8.3</span>
+  </div>
+  <div class="header-right">
+    <span id="status-dot"></span>
+    <span id="status-text">Cargando...</span>
+    <button class="btn btn-outline" onclick="loadData(true)">🔄 Actualizar</button>
+    <button class="btn btn-primary" onclick="showTab('efficiency')">Ver Eficiencia</button>
+  </div>
+</header>
 
-  <!-- CONTROL -->
-  <section class="panel shell">
-    <div class="panel-title">
-      <h2>Control</h2>
-      <button class="ghost" onclick="loadDashboard(false)">Usar cache</button>
-    </div>
-    <div class="sports-grid">
-      {% for label, key in sports.items() %}
-      <label class="sport-card">
-        <input type="checkbox" name="sports" value="{{ label }}" checked>
-        <span>{{ label }}</span>
-      </label>
-      {% endfor %}
-    </div>
-    <div class="button-grid">
-      <button class="primary blue-btn"  onclick="loadDashboard(false)">Buscar picks</button>
-      <button class="primary red-btn"   onclick="loadDashboard(true)">Actualizar odds</button>
-      <button class="primary black-btn" onclick="loadDebug()">Diagnóstico</button>
-    </div>
-    <p class="hint">Claude analiza lesiones, forma y H2H en tiempo real para cada partido.</p>
-  </section>
+<div class="tabs">
+  <button class="tab active" onclick="showTab('dashboard')" id="tab-dashboard">🏆 Dashboard</button>
+  <button class="tab" onclick="showTab('efficiency')" id="tab-efficiency">🔒 Eficiencia</button>
+  <button class="tab" onclick="showTab('soccer')" id="tab-soccer">⚽ Soccer Value</button>
+  <button class="tab" onclick="showTab('highprob')" id="tab-highprob">⭐ Alta Prob</button>
+  <button class="tab" onclick="showTab('tickets')" id="tab-tickets">🎟 Tickets</button>
+  <button class="tab" onclick="showTab('debug')" id="tab-debug">🛠 Debug</button>
+</div>
 
-  <!-- RESUMEN -->
-  <section class="panel shell">
-    <div class="panel-title"><h2>Resumen</h2></div>
-    <div id="summary" class="summary-grid">
-      <div class="summary-card">Sin datos todavía</div>
-    </div>
-  </section>
+<main>
 
-  <!-- 3 JUGADAS DE ORO -->
-  <section class="panel shell important">
-    <div class="panel-title"><h2>💎 3 Jugadas de Oro</h2></div>
-    <div id="goldPicks" class="results">
-      <div class="empty-card">Presiona Buscar picks.</div>
-    </div>
-  </section>
+  <!-- DASHBOARD -->
+  <div class="tab-content active" id="content-dashboard">
+    <div id="cache-info"></div>
+    <div id="top-picks-container"></div>
+  </div>
 
-  <!-- PICKS DEL DÍA -->
-  <section class="panel shell">
-    <div class="panel-title"><h2>🎯 Picks del Día</h2></div>
-    <div id="picksDia" class="results">
-      <div class="empty-card">Sin picks todavía.</div>
+  <!-- EFICIENCIA -->
+  <div class="tab-content" id="content-efficiency">
+    <div class="section-header">
+      <span class="section-title">🔒 Picks Sólidos — Difícil Perder</span>
+      <span class="section-count" id="eff-green-count">0</span>
     </div>
-  </section>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:16px;">MLB · NBA · NHL — Favoritos con alta probabilidad y valor matemático positivo.</p>
+    <div class="cards-grid" id="efficiency-green-grid"></div>
 
-  <!-- PROPS DESTACADOS -->
-  <section class="panel shell">
-    <div class="panel-title"><h2>📈 Props Destacados</h2></div>
-    <div id="playerProps" class="results">
-      <div class="empty-card">Sin props todavía.</div>
+    <div class="section-header">
+      <span class="section-title">📌 Probables</span>
+      <span class="section-count" id="eff-blue-count">0</span>
     </div>
-  </section>
+    <div class="cards-grid" id="efficiency-blue-grid"></div>
+  </div>
 
-  <!-- PARLAYS -->
-  <section class="panel shell ticket-zone">
-    <div class="panel-title"><h2>🎟️ Parlays</h2></div>
-    <div id="parlays" class="results">
-      <div class="empty-card">Sin parlays todavía.</div>
+  <!-- SOCCER VALUE -->
+  <div class="tab-content" id="content-soccer">
+    <div class="section-header">
+      <span class="section-title">💎 Value Alto — Odds Altos con EV+</span>
+      <span class="section-count" id="soccer-gold-count">0</span>
     </div>
-  </section>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:16px;">16 ligas de soccer — Solo jugadas con valor matemático real y odds positivos.</p>
+    <div class="cards-grid" id="soccer-gold-grid"></div>
 
-  <!-- ANÁLISIS POR PARTIDO -->
-  <section class="panel shell">
-    <div class="panel-title"><h2>📊 Análisis por Partido</h2></div>
-    <div id="games" class="results">
-      <div class="empty-card">Sin datos todavía.</div>
+    <div class="section-header">
+      <span class="section-title">🎯 Value Moderado</span>
+      <span class="section-count" id="soccer-silver-count">0</span>
     </div>
-  </section>
+    <div class="cards-grid" id="soccer-silver-grid"></div>
+  </div>
+
+  <!-- ALTA PROBABILIDAD -->
+  <div class="tab-content" id="content-highprob">
+    <div class="section-header">
+      <span class="section-title">⭐ Alta Probabilidad — 65%+</span>
+      <span class="section-count" id="highprob-count">0</span>
+    </div>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:16px;">MLB · NBA · NHL — Picks ordenados por probabilidad descendente. Solo jugadas con ≥65% de probabilidad calculada.</p>
+    <div class="prob-list" id="highprob-list"></div>
+  </div>
+
+  <!-- TICKETS -->
+  <div class="tab-content" id="content-tickets">
+    <div class="section-header"><span class="section-title">🎟 Tickets del Día</span></div>
+    <div id="tickets-container"></div>
+  </div>
+
+  <!-- DEBUG -->
+  <div class="tab-content" id="content-debug">
+    <div class="section-header"><span class="section-title">🛠 Estado de Ligas</span></div>
+    <div id="debug-container"></div>
+  </div>
 
 </main>
 
 <script>
-// ── Helpers ────────────────────────────────────────────────────────────────
-function qs(sel) { return document.querySelector(sel); }
-function selectedSportsQuery() {
-  return [...document.querySelectorAll("input[name='sports']:checked")]
-    .map(x => "sports=" + encodeURIComponent(x.value)).join("&");
-}
-function safeText(v, f = "") {
-  if (v === null || v === undefined) return f;
-  if (typeof v === "object") return v.selection || v.name || f;
-  return String(v);
-}
-function safeNum(v, f = "N/D") {
-  if (v === null || v === undefined || Number.isNaN(Number(v))) return f;
-  return v;
-}
-function colorClass(sig) { return sig.color || "red"; }
+let dashData = null;
 
-// ── Tarjeta de pick ────────────────────────────────────────────────────────
-function signalCard(sig, idx, titleOverride) {
-  const evLine = (sig.ev !== null && sig.ev !== undefined)
-    ? `• EV ${sig.ev}% • Edge ${sig.edge}%` : "";
-  const bookCount = sig.book_count ? `• ${sig.book_count} libros` : "";
-  return `
-  <article class="pick-card ${colorClass(sig)}">
-    <div class="rank">${titleOverride || "#" + (idx + 1)}</div>
-    <div class="pick-body">
-      <div class="pick-top">
-        <span class="badge">${safeText(sig.sport || sig.short_market || sig.market, "Pick")}</span>
-        <span class="confidence">${safeText(sig.label, "N/D")}</span>
-      </div>
-      <h3>${safeText(sig.selection, "Sin selección")}</h3>
-      <p>${safeText(sig.game, "")}</p>
-      <div class="tag-row">
-        <span>${safeText(sig.premium_tag, "📌 Pick")}</span>
-        <span>Score ${safeNum(sig.confidence_score)}/10</span>
-      </div>
-      <div class="metrics">
-        <span>Validación <b>${safeNum(sig.validation)}%</b></span>
-        <span>Prob. <b>${safeNum(sig.probability)}%</b></span>
-        <span>Odds <b>${safeNum(sig.odds)}</b></span>
-      </div>
-      <small><b>Motivo:</b> ${safeText(sig.reason, "")}</small>
-      <small><b>Alerta:</b> ${safeText(sig.sharp_warning, "")}</small>
-      <small class="details">
-        ${safeText(sig.short_market || sig.market, "")} •
-        Stake ${safeText(sig.stake, "N/D")} •
-        Casa ${safeText(sig.bookmaker, "N/D")}
-        ${bookCount} ${evLine}
-      </small>
-    </div>
-  </article>`;
+// -------------------------------------------------------
+// TABS
+// -------------------------------------------------------
+function showTab(name) {
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+  document.getElementById('content-' + name).classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
 }
 
-// ── Tarjeta de parlay ──────────────────────────────────────────────────────
-function parlayCard(t) {
-  if (!t) return "";
-  const picks = (t.picks || []).map((x, i) => `
-    <li>
-      <b>${i + 1}. ${safeText(x.selection)}</b>
-      <small>${safeText(x.game)} • ${safeText(x.short_market)} • ${safeNum(x.probability)}% • Odds ${safeNum(x.odds)}</small>
-    </li>`).join("");
-  return `
-  <article class="ticket-card blue">
-    <div class="ticket-head">
-      <div>
-        <span class="badge">Parlay</span>
-        <h3>${safeText(t.name)}</h3>
-      </div>
-      <div class="ticket-score">
-        <b>${safeNum(t.validation)}%</b>
-        <small>Validación</small>
-      </div>
-    </div>
-    <div class="metrics">
-      <span>Picks <b>${(t.picks || []).length}</b></span>
-      <span>Prob. comb. <b>${safeNum(t.combined_probability)}%</b></span>
-    </div>
-    <ul class="parlay-list">${picks}</ul>
-  </article>`;
-}
+// -------------------------------------------------------
+// FETCH DATA
+// -------------------------------------------------------
+async function loadData(forceRefresh = false) {
+  setStatus('loading');
+  showLoading();
 
-// ── Tarjeta de análisis de partido ────────────────────────────────────────
-function gameCard(g) {
-  const mlCards = (g.ml_signals || []).slice(0, 2).map((s, i) =>
-    signalCard({...s, game: g.game}, i, ["LOCAL", "VISIT"][i] || "ML")
-  ).join("");
-
-  const altTop = (g.alt_signals || []).filter(s => s.color !== "red").slice(0, 2).map((s, i) =>
-    signalCard({...s, game: g.game}, i, s.short_market)
-  ).join("");
-
-  const propsHtml = (g.player_props || []).map((p, i) =>
-    signalCard({...p}, i, "PROP")
-  ).join("");
-
-  const aiBox = g.ai_analysis ? `
-    <div class="prediction-box">
-      <span>🤖 Análisis IA</span>
-      <small>${safeText(g.ai_analysis)}</small>
-    </div>` : "";
-
-  return `
-  <article class="game-card">
-    <div class="game-title">
-      <span class="badge">${safeText(g.sport)}</span>
-      <h3>${safeText(g.game)}</h3>
-      <p>⏰ ${safeText(g.start_time)}</p>
-    </div>
-    ${aiBox}
-    <div class="section-label">Moneyline</div>
-    <div class="two-picks">${mlCards || '<p class="hint">Sin señales ML</p>'}</div>
-    ${altTop ? `<div class="section-label">Spread / Total</div><div class="two-picks">${altTop}</div>` : ""}
-    ${propsHtml ? `<div class="section-label">Props</div><div class="two-picks">${propsHtml}</div>` : ""}
-  </article>`;
-}
-
-// ── Fetch ──────────────────────────────────────────────────────────────────
-async function fetchJSON(url) {
-  const res = await fetch(url);
-  const txt = await res.text();
   try {
-    const data = JSON.parse(txt);
-    if (!res.ok) throw new Error(data.error || txt.slice(0, 180));
-    return data;
+    const url = '/api/dashboard?sports=ALL' + (forceRefresh ? '&refresh=1' : '');
+    const res = await fetch(url);
+    dashData = await res.json();
+
+    renderAll(dashData);
+    setStatus('live', dashData);
   } catch (e) {
-    throw new Error(txt.slice(0, 220));
+    setStatus('error');
+    showError(e.message);
   }
 }
 
-// ── Carga principal ────────────────────────────────────────────────────────
-async function loadDashboard(force) {
-  const status = qs("#status");
-  status.textContent = force ? "Actualizando..." : "Analizando...";
-  for (const id of ["goldPicks","picksDia","playerProps","parlays","games"])
-    qs("#" + id).innerHTML = '<div class="loading">Consultando datos...</div>';
-
-  try {
-    const data = await fetchJSON(`/api/dashboard?${selectedSportsQuery()}&refresh=${force ? 1 : 0}`);
-    const gCount = (data.games || []).length;
-    const warnCount = (data.warnings || []).length;
-    status.textContent = `${gCount} partido${gCount !== 1 ? "s" : ""}${warnCount ? " ⚠" : ""}`;
-
-    // Resumen
-    qs("#summary").innerHTML = Object.entries(data.sports || {}).map(([sport, info]) => `
-      <div class="summary-card">
-        <span>${sport}</span>
-        <b>${info.games_count ?? 0} partidos hoy</b>
-        <small>${info.from_cache ? "Desde cache" : "API nueva"}
-          ${info.cache_seconds_left ? "• " + info.cache_seconds_left + "s" : ""}
-        </small>
-        ${info.error ? `<small class="error">${safeText(info.error)}</small>` : ""}
-      </div>`).join("") || '<div class="summary-card">Sin datos.</div>';
-
-    if (warnCount) {
-      qs("#summary").innerHTML += `<div class="summary-card">
-        <span style="color:#f87171">⚠ Advertencias</span>
-        ${data.warnings.map(w => `<small>${safeText(w)}</small>`).join("")}
-      </div>`;
-    }
-
-    // 3 Jugadas de Oro
-    qs("#goldPicks").innerHTML = (data.gold_picks || []).length
-      ? data.gold_picks.map((p, i) => signalCard(p, i, ["🥇","🥈","🥉"][i])).join("")
-      : '<div class="empty-card">No hay jugadas de oro hoy — mercado sin valor claro.</div>';
-
-    // Picks del día
-    qs("#picksDia").innerHTML = (data.picks_del_dia || []).length
-      ? data.picks_del_dia.map((p, i) => signalCard(p, i)).join("")
-      : '<div class="empty-card">Sin picks del día.</div>';
-
-    // Props
-    qs("#playerProps").innerHTML = (data.player_props || []).length
-      ? data.player_props.map((p, i) => signalCard(p, i, "PROP")).join("")
-      : '<div class="empty-card">Sin props destacados hoy.</div>';
-
-    // Parlays
-    const p3 = parlayCard(data.parlay_3);
-    const p6 = parlayCard(data.parlay_6);
-    qs("#parlays").innerHTML = (p3 || p6)
-      ? (p3 + p6)
-      : '<div class="empty-card">No hay suficientes picks para parlays.</div>';
-
-    // Análisis por partido
-    qs("#games").innerHTML = (data.games || []).length
-      ? data.games.map(gameCard).join("")
-      : '<div class="empty-card">No hay partidos disponibles.</div>';
-
-  } catch (e) {
-    status.textContent = "Error";
-    qs("#goldPicks").innerHTML = `<div class="empty-card">Error: ${safeText(e.message || e)}</div>`;
+function setStatus(state, data) {
+  const dot  = document.getElementById('status-dot');
+  const text = document.getElementById('status-text');
+  if (state === 'loading') {
+    dot.className = '';
+    text.textContent = 'Cargando...';
+  } else if (state === 'live') {
+    dot.className = 'live';
+    const total = (data.efficiency_green||[]).length + (data.value_gold||[]).length;
+    text.textContent = `${total} picks · ${new Date().toLocaleTimeString('es', {hour:'2-digit',minute:'2-digit'})}`;
+  } else {
+    dot.className = '';
+    text.textContent = 'Error';
   }
 }
 
-// ── Debug ──────────────────────────────────────────────────────────────────
-async function loadDebug() {
-  try {
-    const data = await fetchJSON("/api/debug");
-    qs("#summary").innerHTML = `<pre class="raw">${JSON.stringify(data, null, 2)}</pre>`;
-    qs("#status").textContent = "Debug OK";
-  } catch (e) {
-    qs("#summary").innerHTML = `<div class="empty-card">Error: ${safeText(e.message || e)}</div>`;
-    qs("#status").textContent = "Error";
+function showLoading() {
+  ['top-picks-container','efficiency-green-grid','efficiency-blue-grid',
+   'soccer-gold-grid','soccer-silver-grid','tickets-container','debug-container'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = `<div class="loading-overlay"><div class="loading-spinner"></div> Cargando picks...</div>`;
+  });
+}
+
+function showError(msg) {
+  document.getElementById('top-picks-container').innerHTML =
+    `<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-msg">Error: ${msg}</div></div>`;
+}
+
+// -------------------------------------------------------
+// RENDER ALL
+// -------------------------------------------------------
+function renderAll(data) {
+  renderCacheInfo(data);
+  renderDashboard(data);
+  renderGrid('efficiency-green-grid', data.efficiency_green || [], 'eff-green-count');
+  renderGrid('efficiency-blue-grid',  data.efficiency_blue  || [], 'eff-blue-count');
+  renderGrid('soccer-gold-grid',   data.value_gold   || [], 'soccer-gold-count');
+  renderGrid('soccer-silver-grid', data.value_silver || [], 'soccer-silver-count');
+  renderHighProb(data);
+  renderTickets(data);
+  renderDebug(data);
+}
+
+// -------------------------------------------------------
+// CACHE INFO
+// -------------------------------------------------------
+function renderCacheInfo(data) {
+  const sports = data.sports || {};
+  const ttls = Object.values(sports).filter(s => s.ok && s.cache_seconds_left).map(s => s.cache_seconds_left);
+  const minTtl = ttls.length ? Math.min(...ttls) : null;
+  const tz = data.timezone || 'America/New_York';
+
+  document.getElementById('cache-info').innerHTML = `
+    <div class="cache-bar">
+      <span>🕐 ${new Date().toLocaleTimeString('es')}</span>
+      <span>📍 ${tz}</span>
+      ${minTtl ? `<span>♻ Cache: ${Math.floor(minTtl/60)}m ${minTtl%60}s</span>` : ''}
+      <span>⚽ ${Object.keys(sports).filter(k => !['MLB','NBA','NHL'].includes(k) && sports[k].ok).length} ligas soccer OK</span>
+      <span>🏆 ${['MLB','NBA','NHL'].filter(k => sports[k] && sports[k].ok).length} deportes OK</span>
+    </div>
+  `;
+}
+
+// -------------------------------------------------------
+// DASHBOARD
+// -------------------------------------------------------
+function renderDashboard(data) {
+  const green  = data.efficiency_green || [];
+  const gold   = data.value_gold || [];
+
+  let html = '';
+
+  if (green.length > 0) {
+    html += `<div class="section-header"><span class="section-title">🔒 Top Eficiencia</span><span class="section-count">${green.length}</span></div>`;
+    html += `<div class="cards-grid">` + green.slice(0,6).map(renderCard).join('') + `</div>`;
+  }
+
+  if (gold.length > 0) {
+    html += `<div class="section-header" style="margin-top:28px"><span class="section-title">💎 Top Soccer Value</span><span class="section-count">${gold.length}</span></div>`;
+    html += `<div class="cards-grid">` + gold.slice(0,6).map(renderCard).join('') + `</div>`;
+  }
+
+  if (!green.length && !gold.length) {
+    html = `<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-msg">No hay picks disponibles hoy. Intenta más tarde.</div></div>`;
+  }
+
+  document.getElementById('top-picks-container').innerHTML = html;
+}
+
+// -------------------------------------------------------
+// CARD
+// -------------------------------------------------------
+function escAttr(s) {
+  return (s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+function fmtOdds(o) {
+  if (o == null) return null;
+  return o > 0 ? `+${o}` : `${o}`;
+}
+
+function renderCard(sig) {
+  const color   = sig.color || 'blue';
+  const odds    = sig.odds;
+  const oddsStr = fmtOdds(odds) || '--';
+  const oddsClass = odds > 0 ? 'odds-pos' : 'odds-neg';
+  const prob    = sig.probability != null ? sig.probability.toFixed(1) + '%' : '--';
+  const val     = sig.validation  != null ? sig.validation.toFixed(1)  : '--';
+  const ev      = sig.ev != null ? (sig.ev > 0 ? '+' : '') + sig.ev.toFixed(1) + '%' : '--';
+  const game    = sig.game || '';
+  const sel     = sig.selection || '';
+  const label   = sig.label || '';
+  const book    = sig.bookmaker || '';
+  const stake   = sig.stake || '0u';
+  const sport   = sig.sport || sig.market || '';
+
+  // FanDuel pick line
+  const fdOdds    = sig.fanduel_odds;
+  const fdOddsStr = fmtOdds(fdOdds);
+  const fdAvail   = sig.fanduel_available;
+  const fdPickOdds   = fdAvail ? fdOddsStr : oddsStr;
+  const fdPickText   = `${sel} · Moneyline · ${fdPickOdds}`;
+  const fdOddsBlock  = fdAvail
+    ? `<span class="odds-badge ${fdOdds > 0 ? 'odds-pos' : 'odds-neg'}">${fdOddsStr}</span>`
+    : `<span class="fd-no-odds">⚠ Sin odds FD — mejor: ${oddsStr}</span>`;
+
+  return `
+    <div class="card ${color}">
+      <div class="card-top">
+        <span class="card-label">${label}</span>
+        <span class="card-sport">${sport}</span>
+      </div>
+      <div class="card-game">${game}</div>
+      <div class="card-selection">${sel}</div>
+      <div class="fd-pick">
+        <div>
+          <div class="fd-pick-label">📋 FanDuel Pick</div>
+          <div class="fd-pick-text">${fdPickText}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px">
+          ${fdOddsBlock}
+          <button class="btn-copy" data-pick="${escAttr(fdPickText)}" onclick="copyPick(this, this.dataset.pick)">Copiar</button>
+        </div>
+      </div>
+      <div class="card-stats">
+        <div class="stat">
+          <div class="stat-val">${prob}</div>
+          <div class="stat-lbl">Probabilidad</div>
+        </div>
+        <div class="stat">
+          <div class="stat-val">${val}</div>
+          <div class="stat-lbl">Validación</div>
+        </div>
+        <div class="stat">
+          <div class="stat-val">${ev}</div>
+          <div class="stat-lbl">EV%</div>
+        </div>
+      </div>
+      <div class="card-footer">
+        <div class="card-book">📚 ${book}</div>
+        <span class="card-stake">${stake}</span>
+      </div>
+    </div>
+  `;
+}
+
+// -------------------------------------------------------
+// GRID
+// -------------------------------------------------------
+function renderGrid(containerId, picks, countId) {
+  const el    = document.getElementById(containerId);
+  const count = document.getElementById(countId);
+  if (count) count.textContent = picks.length;
+  if (!picks.length) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-msg">Sin picks en esta categoría hoy.</div></div>`;
+    return;
+  }
+  el.innerHTML = picks.map(renderCard).join('');
+}
+
+// -------------------------------------------------------
+// TICKETS
+// -------------------------------------------------------
+function renderTickets(data) {
+  const tickets = data.tickets || [];
+  const container = document.getElementById('tickets-container');
+
+  if (!tickets.length) {
+    container.innerHTML = `<div class="empty-state"><div class="empty-icon">🎟</div><div class="empty-msg">No hay suficientes picks para generar tickets hoy.</div></div>`;
+    return;
+  }
+
+  container.innerHTML = tickets.map((t, ti) => {
+    const tPicks = t.picks || [];
+
+    const picks = tPicks.map(p => {
+      const fdOdds    = p.fanduel_odds;
+      const fdAvail   = p.fanduel_available;
+      const dispOdds  = fdAvail ? fdOdds : p.odds;
+      const oddsStr   = fmtOdds(dispOdds) || '--';
+      const oddsClass = dispOdds > 0 ? 'odds-pos' : 'odds-neg';
+      const fdBadge   = fdAvail
+        ? `<span style="font-size:10px;color:#38bdf8;font-weight:700">FD</span>`
+        : `<span style="font-size:10px;color:#f59e0b" title="FanDuel no tiene este juego">⚠</span>`;
+
+      return `
+        <div class="ticket-pick">
+          <div class="ticket-pick-left">
+            <div class="ticket-pick-game">${p.game || ''} · ${p.sport || ''}</div>
+            <div class="ticket-pick-sel">${p.selection || ''} · Moneyline</div>
+          </div>
+          <div class="ticket-pick-right">
+            ${fdBadge}
+            <span class="odds-badge ${oddsClass}">${oddsStr}</span>
+            <span style="font-size:12px;color:var(--muted)">${p.probability?.toFixed(1)}%</span>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    // ID único para el botón de copiar
+    const btnId = `copy-parlay-${ti}`;
+
+    return `
+      <div class="ticket-card">
+        <div class="ticket-header">
+          <span class="ticket-title">${t.name || 'Ticket'}</span>
+          <div class="ticket-meta">
+            <span class="ticket-badge ${t.color}">${t.risk || ''}</span>
+            <span style="font-size:12px;color:var(--muted)">${t.reason || ''}</span>
+          </div>
+        </div>
+        <div class="ticket-picks">${picks}</div>
+        <div class="ticket-stats">
+          <div class="ticket-stat">
+            <div class="ticket-stat-val">${t.validation?.toFixed(1)}</div>
+            <div class="ticket-stat-lbl">Validación</div>
+          </div>
+          <div class="ticket-stat">
+            <div class="ticket-stat-val">${t.combined_probability?.toFixed(2)}%</div>
+            <div class="ticket-stat-lbl">Prob. combinada</div>
+          </div>
+          <div class="ticket-stat">
+            <div class="ticket-stat-val">${tPicks.length}</div>
+            <div class="ticket-stat-lbl">Picks</div>
+          </div>
+        </div>
+        <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+          <button id="${btnId}" class="btn-copy-parlay"
+            onclick="copyParlay(this, ${escAttr(JSON.stringify(tPicks))})">
+            📋 Copiar Parlay FanDuel
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// -------------------------------------------------------
+// DEBUG
+// -------------------------------------------------------
+function renderDebug(data) {
+  const sports = data.sports || {};
+  const rows = Object.entries(sports).map(([label, s]) => `
+    <tr>
+      <td>${s.ok ? '<span class="dot-ok">●</span>' : '<span class="dot-err">●</span>'} ${label}</td>
+      <td>${s.sport_key || ''}</td>
+      <td>${s.games_count ?? '--'}</td>
+      <td>${s.total_api_games ?? '--'}</td>
+      <td>${s.from_cache ? '♻ Cache' : '🌐 API'}</td>
+      <td>${s.ok ? '' : (s.error || 'Error')}</td>
+    </tr>
+  `).join('');
+
+  document.getElementById('debug-container').innerHTML = `
+    <table class="sports-table">
+      <thead>
+        <tr>
+          <th>Liga</th>
+          <th>API Key</th>
+          <th>Hoy</th>
+          <th>Total</th>
+          <th>Fuente</th>
+          <th>Error</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div style="margin-top:16px">
+      <button class="btn btn-outline" onclick="clearCache()">🗑 Limpiar Cache</button>
+    </div>
+  `;
+}
+
+async function clearCache() {
+  await fetch('/api/clear-cache');
+  loadData(true);
+}
+
+// -------------------------------------------------------
+// HIGH PROB RANKED LIST
+// -------------------------------------------------------
+function renderHighProb(data) {
+  const picks = data.high_prob || [];
+  const list  = document.getElementById('highprob-list');
+  const count = document.getElementById('highprob-count');
+  if (count) count.textContent = picks.length;
+
+  if (!picks.length) {
+    list.innerHTML = `<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-msg">Sin picks con probabilidad ≥65% hoy.</div></div>`;
+    return;
+  }
+
+  list.innerHTML = picks.map((p, i) => {
+    const prob     = p.probability || 0;
+    const tier     = prob >= 72 ? 'tier-a' : 'tier-b';
+    const probStr  = prob.toFixed(1) + '%';
+    const fdOdds   = p.fanduel_odds;
+    const fdAvail  = p.fanduel_available;
+    const dispOdds = fdAvail ? fdOdds : p.odds;
+    const oddsStr  = fmtOdds(dispOdds) || '--';
+    const fdLine   = `${p.selection || ''} · Moneyline · ${oddsStr}`;
+    const fdBadge  = fdAvail
+      ? `<span style="font-size:10px;font-weight:700;color:#38bdf8">FD</span>`
+      : `<span style="font-size:10px;color:#f59e0b" title="Sin odds FanDuel">⚠</span>`;
+    const barPct   = Math.min(prob, 100).toFixed(1);
+    const label    = p.label || '';
+    const sport    = p.sport || '';
+    const ev       = p.ev != null ? (p.ev > 0 ? '+' : '') + p.ev.toFixed(1) + '%' : '';
+
+    return `
+      <div class="prob-row">
+        <div class="prob-rank">#${i + 1}</div>
+        <div class="prob-circle ${tier}">${probStr}</div>
+        <div class="prob-info">
+          <div class="prob-sel">${p.selection || ''}</div>
+          <div class="prob-game">${p.game || ''}</div>
+          <div class="prob-badges">
+            <span class="card-sport">${sport}</span>
+            <span class="card-label ${p.color || 'blue'}" style="font-size:10px;padding:2px 7px">${label}</span>
+            ${ev ? `<span style="font-size:10px;color:var(--muted)">EV ${ev}</span>` : ''}
+          </div>
+          <div class="prob-bar-wrap" style="margin-top:6px">
+            <div class="prob-bar-fill ${tier}" style="width:${barPct}%"></div>
+          </div>
+        </div>
+        <div class="prob-right">
+          <div class="prob-badges">${fdBadge}
+            <span class="odds-badge ${dispOdds > 0 ? 'odds-pos' : 'odds-neg'}">${oddsStr}</span>
+          </div>
+          <div class="prob-fd-line">${fdLine}</div>
+          <button class="btn-copy" data-pick="${escAttr(fdLine)}" onclick="copyPick(this, this.dataset.pick)">Copiar</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// -------------------------------------------------------
+// COPY HELPERS
+// -------------------------------------------------------
+function copyPick(btn, text) {
+  const done = () => {
+    btn.textContent = '✓ Copiado';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Copiar'; btn.classList.remove('copied'); }, 2000);
+  };
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
+  } else {
+    fallbackCopy(text, done);
   }
 }
+
+function fallbackCopy(text, cb) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  try { document.execCommand('copy'); } catch (_) {}
+  document.body.removeChild(ta);
+  if (cb) cb();
+}
+
+function copyParlay(btn, picks) {
+  const header = `PARLAY ${picks.length} LEGS — FanDuel`;
+  const legs   = picks.map((p, i) => {
+    const fdO  = p.fanduel_odds;
+    const odds = fdO != null ? (fdO > 0 ? `+${fdO}` : `${fdO}`) : (p.odds > 0 ? `+${p.odds}` : `${p.odds}`);
+    return `${i + 1}. ${p.selection} · Moneyline · ${odds}`;
+  });
+  const text = [header, ...legs].join('\n');
+  const done = () => {
+    btn.textContent = '✓ Parlay Copiado';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = '📋 Copiar Parlay FanDuel'; btn.classList.remove('copied'); }, 2500);
+  };
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
+  } else {
+    fallbackCopy(text, done);
+  }
+}
+
+// -------------------------------------------------------
+// INIT
+// -------------------------------------------------------
+loadData();
+// Auto-refresh cada 15 minutos
+setInterval(() => loadData(false), 15 * 60 * 1000);
 </script>
 </body>
 </html>

@@ -1,13 +1,8 @@
 """
-ev_engine_v3.py — EV Engine v8.3
-Cambios principales vs v8.2:
-  - Integración con Claude API para análisis enriquecido con web search
-  - 3 Jugadas de Oro (mayor EV + confianza)
-  - Picks del día (máximo 5)
-  - Props de jugadores (MLB, NBA, NHL)
-  - Parlay 3 y Parlay 6
-  - Análisis completo por partido (ML + Spread + Total)
-  - Sin picks rojos en secciones principales
+ev_engine_v8.3.py
+- Soccer: ligas disponibles en The Odds API (gratis), filtro de VALUE alto (odds >= +150)
+- MLB/NBA/NHL: modo EFICIENCIA - favoritos sólidos, difícil perder
+- Dashboard separado por categoría: value_soccer / efficiency_picks
 """
 
 import os
@@ -26,63 +21,78 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
-logger = logging.getLogger("ev_engine_v3")
+logger = logging.getLogger("ev_engine")
 
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
 API_KEY: str = os.getenv("ODDS_API_KEY", "")
-ANTHROPIC_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
-SPORTS: dict[str, str] = {
+
+# Deportes principales - modo EFICIENCIA (difícil perder)
+SPORTS_EFFICIENCY: dict[str, str] = {
     "MLB": "baseball_mlb",
     "NBA": "basketball_nba",
     "NHL": "icehockey_nhl",
 }
-PLAYER_PROPS_MARKETS: dict[str, str] = {
-    "MLB": "batter_hits,batter_home_runs,pitcher_strikeouts",
-    "NBA": "player_points,player_rebounds,player_assists",
-    "NHL": "player_goals,player_shots_on_goal",
-}
-REGIONS: str = os.getenv("REGIONS", "us")
-MARKETS: str = os.getenv("MARKETS", "h2h,spreads,totals")
-ODDS_FORMAT: str = "american"
-LOCAL_TZ: str = os.getenv("LOCAL_TZ", "America/New_York")
-ONLY_TODAY: bool = os.getenv("ONLY_TODAY", "1") == "1"
-CACHE_TTL: int = int(os.getenv("CACHE_TTL", "900"))
-PROPS_CACHE_TTL: int = int(os.getenv("PROPS_CACHE_TTL", "1800"))
 
-EV_CLAMP = (-25.0, 25.0)
-EDGE_CLAMP = (-20.0, 20.0)
-PROB_CLAMP = (1.0, 85.0)
-VAL_CLAMP = (1.0, 95.0)
+# Soccer - modo VALUE (odds altos)
+# Solo ligas activas en junio para ahorrar créditos (500/mes plan free)
+SPORTS_SOCCER: dict[str, str] = {
+    "MLS":         "soccer_usa_mls",
+    "Brasileirao": "soccer_brazil_campeonato",
+    "Argentina":   "soccer_argentina_primera_division",
+    "Mexico":      "soccer_mexico_ligamx",
+}
+
+SPORTS: dict[str, str] = {**SPORTS_EFFICIENCY, **SPORTS_SOCCER}
+
+REGIONS: str     = os.getenv("REGIONS", "us")
+MARKETS: str     = os.getenv("MARKETS", "h2h,spreads,totals")
+ODDS_FORMAT: str = "american"
+LOCAL_TZ: str    = os.getenv("LOCAL_TZ", "America/New_York")
+ONLY_TODAY: bool = os.getenv("ONLY_TODAY", "1") == "1"
+CACHE_TTL: int   = int(os.getenv("CACHE_TTL", "900"))
+
+# Umbrales
+EFFICIENCY_MIN_PROB   = 62.0   # % mínimo para pick eficiente
+EFFICIENCY_MIN_VAL    = 65.0   # validación mínima
+EFFICIENCY_MAX_ODDS   = -120   # no más caro que -120 en americano para eficiencia
+VALUE_MIN_ODDS_AMER   = 130    # +130 o más para soccer value (2.30 decimal)
+VALUE_MIN_PROB        = 30.0   # al menos 30% de probabilidad real
+VALUE_MIN_EV          = 2.0    # EV% mínimo positivo para soccer
+
+EV_CLAMP    = (-25.0, 25.0)
+EDGE_CLAMP  = (-20.0, 20.0)
+PROB_CLAMP  = (1.0, 85.0)
+VAL_CLAMP   = (1.0, 95.0)
 
 # ---------------------------------------------------------------------------
 # Caché thread-safe
 # ---------------------------------------------------------------------------
-_cache: dict = {}
+_cache: dict[str, tuple[float, list]] = {}
 _cache_lock = threading.Lock()
 
-def clear_cache():
+def clear_cache() -> None:
     with _cache_lock:
         _cache.clear()
 
-def _cache_get(key: str, ttl: int):
+def _cache_get(key: str) -> Optional[tuple[list, int]]:
     with _cache_lock:
         entry = _cache.get(key)
-    if entry is None:
-        return None
-    ts, data = entry
-    remaining = ttl - (time.time() - ts)
-    if remaining <= 0:
-        return None
-    return data, int(remaining)
+        if entry is None:
+            return None
+        ts, data = entry
+        remaining = CACHE_TTL - (time.time() - ts)
+        if remaining <= 0:
+            return None
+        return data, int(remaining)
 
-def _cache_set(key: str, data):
+def _cache_set(key: str, data: list) -> None:
     with _cache_lock:
         _cache[key] = (time.time(), data)
 
 # ---------------------------------------------------------------------------
-# Utilidades matemáticas
+# Matemáticas
 # ---------------------------------------------------------------------------
 def clamp(v, lo, hi):
     try:
@@ -106,7 +116,7 @@ def calculate_ev(prob: float, decimal_odds: float) -> float:
     return prob * decimal_odds - 1
 
 # ---------------------------------------------------------------------------
-# API status
+# API
 # ---------------------------------------------------------------------------
 def api_key_status() -> str:
     if not API_KEY:
@@ -115,24 +125,13 @@ def api_key_status() -> str:
         return "too_short"
     return "present"
 
-def anthropic_key_status() -> str:
-    if not ANTHROPIC_KEY:
-        return "missing"
-    return "present"
-
-# ---------------------------------------------------------------------------
-# Fetch odds
-# ---------------------------------------------------------------------------
-def fetch_odds(sport_key: str, force_refresh: bool = False, markets: str = None, ttl: int = None):
+def fetch_odds(sport_key: str, force_refresh: bool = False) -> tuple[list, bool, int]:
     if not API_KEY or API_KEY == "pon_tu_api_key_aqui":
         raise RuntimeError("Falta ODDS_API_KEY en Render Environment")
 
-    use_markets = markets or MARKETS
-    use_ttl = ttl or CACHE_TTL
-    cache_key = f"{sport_key}:{REGIONS}:{use_markets}:{ODDS_FORMAT}"
-
+    cache_key = f"{sport_key}:{REGIONS}:{MARKETS}:{ODDS_FORMAT}"
     if not force_refresh:
-        cached = _cache_get(cache_key, use_ttl)
+        cached = _cache_get(cache_key)
         if cached:
             data, remaining = cached
             return data, True, remaining
@@ -141,11 +140,11 @@ def fetch_odds(sport_key: str, force_refresh: bool = False, markets: str = None,
     params = {
         "apiKey": API_KEY,
         "regions": REGIONS,
-        "markets": use_markets,
+        "markets": MARKETS,
         "oddsFormat": ODDS_FORMAT,
         "dateFormat": "iso",
     }
-    logger.info("Fetching odds para %s markets=%s", sport_key, use_markets)
+    logger.info("Fetching odds para %s", sport_key)
     r = requests.get(url, params=params, timeout=30)
     if r.status_code != 200:
         try:
@@ -156,40 +155,10 @@ def fetch_odds(sport_key: str, force_refresh: bool = False, markets: str = None,
 
     data = r.json()
     _cache_set(cache_key, data)
-    return data, False, use_ttl
+    return data, False, CACHE_TTL
 
 # ---------------------------------------------------------------------------
-# Fetch player props para un game_id
-# ---------------------------------------------------------------------------
-def fetch_player_props(sport_key: str, game_id: str, prop_markets: str):
-    cache_key = f"props:{sport_key}:{game_id}:{prop_markets}"
-    cached = _cache_get(cache_key, PROPS_CACHE_TTL)
-    if cached:
-        data, _ = cached
-        return data
-
-    url = f"https://api.the-odds-api.com/v4/sports/{sport_key}/events/{game_id}/odds"
-    params = {
-        "apiKey": API_KEY,
-        "regions": REGIONS,
-        "markets": prop_markets,
-        "oddsFormat": ODDS_FORMAT,
-        "dateFormat": "iso",
-    }
-    try:
-        r = requests.get(url, params=params, timeout=30)
-        if r.status_code != 200:
-            logger.warning("Props API error %s para %s", r.status_code, game_id)
-            return None
-        data = r.json()
-        _cache_set(cache_key, data)
-        return data
-    except Exception as e:
-        logger.error("Error fetching props: %s", e)
-        return None
-
-# ---------------------------------------------------------------------------
-# Filtro de juegos
+# Filtros
 # ---------------------------------------------------------------------------
 def is_game_today(game: dict) -> bool:
     if not ONLY_TODAY:
@@ -205,9 +174,9 @@ def is_game_today(game: dict) -> bool:
         return False
 
 # ---------------------------------------------------------------------------
-# Extracción de mercados
+# Mercados
 # ---------------------------------------------------------------------------
-def get_market_outcomes(game: dict, mkey: str) -> list:
+def get_market_outcomes(game: dict, mkey: str) -> list[dict]:
     rows = []
     for b in game.get("bookmakers", []):
         title = b.get("title", "Unknown")
@@ -221,7 +190,6 @@ def get_market_outcomes(game: dict, mkey: str) -> list:
                     "name": o.get("name"),
                     "price": o.get("price"),
                     "point": o.get("point"),
-                    "description": o.get("description"),
                 })
     return rows
 
@@ -245,11 +213,8 @@ def best_price_same(outcomes: list, name: str, point=None) -> Optional[dict]:
             }
     return best
 
-# ---------------------------------------------------------------------------
-# No-vig y probabilidades justas
-# ---------------------------------------------------------------------------
-def no_vig_h2h_probabilities(outcomes: list) -> tuple:
-    by_book: dict = {}
+def no_vig_h2h_probabilities(outcomes: list) -> tuple[dict, dict]:
+    by_book: dict[str, list] = {}
     for o in outcomes:
         name = o.get("name")
         price = o.get("price")
@@ -260,8 +225,8 @@ def no_vig_h2h_probabilities(outcomes: list) -> tuple:
         if p is not None:
             by_book.setdefault(book, []).append((name, p))
 
-    probs: dict = {}
-    counts: dict = {}
+    probs: dict[str, float] = {}
+    counts: dict[str, int] = {}
     for items in by_book.values():
         if len(items) < 2:
             continue
@@ -273,7 +238,10 @@ def no_vig_h2h_probabilities(outcomes: list) -> tuple:
             probs[name] = probs.get(name, 0) + fair
             counts[name] = counts.get(name, 0) + 1
 
-    result = {n: clamp(v / counts.get(n, 1), 0.01, 0.99) for n, v in probs.items()}
+    result = {
+        n: clamp(v / counts.get(n, 1), 0.01, 0.99)
+        for n, v in probs.items()
+    }
     return result, counts
 
 def best_price_filtered(outcomes: list, name: str, fair: float, point=None) -> Optional[dict]:
@@ -299,357 +267,231 @@ def best_price_filtered(outcomes: list, name: str, fair: float, point=None) -> O
         return None
     sane = [c for c in cand if c["diff"] <= 0.25]
     if not sane:
-        return sorted(cand, key=lambda c: c["diff"])[0]
+        fallback = sorted(cand, key=lambda c: c["diff"])[0]
+        return fallback
     return sorted(sane, key=lambda c: c["decimal_odds"], reverse=True)[0]
 
+def fanduel_price(outcomes: list, name: str, point=None) -> Optional[int]:
+    """Devuelve las odds americanas de FanDuel para una selección, o None si FanDuel no tiene el juego."""
+    for o in outcomes:
+        if o.get("bookmaker") != "FanDuel":
+            continue
+        if o.get("name") != name:
+            continue
+        if point is not None and o.get("point") != point:
+            continue
+        price = o.get("price")
+        if price is not None:
+            return int(price)
+    return None
+
 # ---------------------------------------------------------------------------
-# EV, edge y validación
+# EV y validación
 # ---------------------------------------------------------------------------
-def safe_ev_edge(fair: float, odds: int) -> tuple:
+def safe_ev_edge(fair: float, odds: int) -> tuple[Optional[float], Optional[float]]:
     dec = american_to_decimal(odds)
     imp = implied_probability_american(odds)
     if dec is None or imp is None:
         return None, None
-    ev = round(clamp(calculate_ev(fair, dec) * 100, *EV_CLAMP), 1)
+    ev   = round(clamp(calculate_ev(fair, dec) * 100, *EV_CLAMP), 1)
     edge = round(clamp((fair - imp) * 100, *EDGE_CLAMP), 1)
     return ev, edge
 
 def _odds_adjustment(odds: Optional[int]) -> float:
     if odds is None:
         return 0.0
-    if odds <= -1000:
-        return -18.0
-    if odds <= -400:
-        return -10.0
-    if odds <= -250:
-        return -5.0
-    if odds <= -150:
-        return 1.0
-    if odds >= 600:
-        return -10.0
-    if odds >= 300:
-        return -5.0
+    if odds <= -1000: return -18.0
+    if odds <= -400:  return -10.0
+    if odds <= -250:  return -5.0
+    if odds <= -150:  return 1.0
+    if odds >= 600:   return -10.0
+    if odds >= 300:   return -5.0
     return 0.0
 
 def smooth_validation(prob, odds, books, ev=0.0, edge=0.0) -> float:
-    prob = clamp(prob, 1, 85)
-    ev = clamp(ev or 0.0, -10, 10)
-    edge = clamp(edge or 0.0, -8, 8)
-    adj = min((books or 0) * 0.6, 5.0)
-    adj += _odds_adjustment(odds)
-    adj += clamp(ev * 0.35, -3, 4)
-    adj += clamp(edge * 0.45, -3, 4)
-    return round(clamp(prob + adj, *VAL_CLAMP), 1)
+    prob  = clamp(prob, 1, 85)
+    ev    = clamp(ev or 0.0, -10, 10)
+    edge  = clamp(edge or 0.0, -8, 8)
+    adj_books = min((books or 0) * 0.6, 5.0)
+    adj_odds  = _odds_adjustment(odds)
+    adj_ev    = clamp(ev * 0.35, -3, 4)
+    adj_edge  = clamp(edge * 0.45, -3, 4)
+    return round(clamp(prob + adj_books + adj_odds + adj_ev + adj_edge, *VAL_CLAMP), 1)
 
-def classify_pick(prob, val, ev, edge, odds) -> tuple:
-    ev = ev if ev is not None else 0.0
-    edge = edge if edge is not None else 0.0
-    if odds is not None and odds <= -400 and val >= 52 and prob >= 48:
-        return "blue", "PROBABLE", "Probable ganador, pero cuota demasiado cara.", "0u-0.25u"
-    if val >= 68 and prob >= 58 and ev > -3 and edge > -3:
-        return "green", "JUGADA DE ORO", "Alta validación con EV positivo.", "0.50u-1u"
-    if val >= 52 and prob >= 48:
-        return "blue", "PROBABLE", "Probable ganador con valor aceptable.", "0u-0.25u"
-    return "red", "EVITAR", "Baja validación o precio desfavorable.", "0u"
+# ---------------------------------------------------------------------------
+# Clasificación EFICIENCIA (MLB/NBA/NHL)
+# ---------------------------------------------------------------------------
+def classify_efficiency(prob, val, ev, edge, odds) -> tuple[str, str, str, str]:
+    ev    = ev or 0.0
+    edge  = edge or 0.0
 
+    # Favorito sólido con buen precio
+    if prob >= EFFICIENCY_MIN_PROB and val >= EFFICIENCY_MIN_VAL and ev >= 0 and edge >= 0:
+        return "green", "🔒 SÓLIDO", "Favorito con alta probabilidad y buen valor.", "0.5u-1u"
+
+    # Probable pero sin mucho valor
+    if prob >= 58 and val >= 60:
+        return "blue", "📌 PROBABLE", "Alta probabilidad pero precio ajustado.", "0.25u"
+
+    return "red", "⚠ EVITAR", "No cumple criterios de eficiencia.", "0u"
+
+# ---------------------------------------------------------------------------
+# Clasificación VALUE SOCCER
+# ---------------------------------------------------------------------------
+def classify_soccer_value(prob, val, ev, edge, odds) -> tuple[str, str, str, str]:
+    ev   = ev or 0.0
+    edge = edge or 0.0
+
+    # Odds positivos altos con valor real
+    if odds >= VALUE_MIN_ODDS_AMER and prob >= VALUE_MIN_PROB and ev >= VALUE_MIN_EV:
+        return "gold", "💎 VALUE ALTO", "Odds altos con valor matemático positivo.", "0.5u"
+
+    # Buen value moderado
+    if odds >= 100 and prob >= 35 and ev >= 1.0:
+        return "silver", "🎯 VALUE", "Cuota positiva con valor aceptable.", "0.25u"
+
+    return "red", "⚠ EVITAR", "Sin valor suficiente.", "0u"
+
+# ---------------------------------------------------------------------------
+# Enriquecimiento
+# ---------------------------------------------------------------------------
 def confidence_score(v) -> float:
     return round(clamp((v or 0) / 10, 0.1, 9.9), 1)
 
-def premium_tag(sig: dict) -> str:
-    if sig.get("short_market") != "ML":
-        return "🎯 Pick alternativo"
-    odds = sig.get("odds")
-    if odds is not None and odds <= -300:
-        return "⚠ Línea cara"
-    if sig.get("ev") is not None and sig["ev"] >= 3:
-        return "💎 Value Pick"
-    if sig.get("validation", 0) >= 68:
-        return "🔒 Jugada de Oro"
-    return "📌 Probable"
-
-def sharp_warning(sig: dict) -> str:
-    odds = sig.get("odds")
-    if odds is not None and odds <= -400:
-        return "Cuota muy cara; usar stake bajo."
-    if sig.get("ev") is not None and sig["ev"] < -5 and sig.get("validation", 0) >= 55:
-        return "Probable, pero sin valor fuerte."
-    if sig.get("validation", 0) < 52:
-        return "No usar en tickets principales."
-    return "Sin alerta fuerte."
-
 def enrich(sig: dict) -> dict:
     sig["confidence_score"] = confidence_score(sig.get("validation"))
-    sig["premium_tag"] = premium_tag(sig)
-    sig["sharp_warning"] = sharp_warning(sig)
-    sig["is_bet_recommendation"] = sig.get("color") in ("green", "blue")
+    sig["is_bet_recommendation"] = sig.get("color") in ("green", "blue", "gold", "silver")
     return sig
 
 # ---------------------------------------------------------------------------
-# Señales de mercado
+# Señales ML - EFICIENCIA
 # ---------------------------------------------------------------------------
-def moneyline_signals(game: dict) -> list:
+def moneyline_efficiency(game: dict, sport: str) -> list[dict]:
     outs = get_market_outcomes(game, "h2h")
     fair, counts = no_vig_h2h_probabilities(outs)
     signals = []
+
     for name, p in fair.items():
         best = best_price_filtered(outs, name, p)
         if not best:
             continue
-        odds = best["american_odds"]
-        prob = round(clamp(p * 100, *PROB_CLAMP), 1)
+        odds  = best["american_odds"]
+        prob  = round(clamp(p * 100, *PROB_CLAMP), 1)
         ev, edge = safe_ev_edge(p, odds)
-        val = smooth_validation(prob, odds, counts.get(name, 0), ev, edge)
-        color, label, reason, stake = classify_pick(prob, val, ev, edge, odds)
+        val   = smooth_validation(prob, odds, counts.get(name, 0), ev, edge)
+        color, label, reason, stake = classify_efficiency(prob, val, ev, edge, odds)
+
+        fd_odds = fanduel_price(outs, name)
         signals.append(enrich({
-            "market": "Moneyline", "short_market": "ML",
-            "selection": name, "probability": prob, "validation": val,
-            "color": color, "label": label, "reason": reason, "stake": stake,
-            "ev": ev, "edge": edge, "odds": odds, "point": None,
-            "bookmaker": best["bookmaker"], "book_count": counts.get(name, 0),
-            "is_primary": True,
+            "mode":              "efficiency",
+            "sport":             sport,
+            "market":            "Moneyline",
+            "short_market":      "ML",
+            "selection":         name,
+            "probability":       prob,
+            "validation":        val,
+            "color":             color,
+            "label":             label,
+            "reason":            reason,
+            "stake":             stake,
+            "ev":                ev,
+            "edge":              edge,
+            "odds":              odds,
+            "decimal_odds":      best["decimal_odds"],
+            "bookmaker":         best["bookmaker"],
+            "book_count":        counts.get(name, 0),
+            "is_primary":        True,
+            "fanduel_odds":      fd_odds,
+            "fanduel_available": fd_odds is not None,
         }))
+
     return sorted(signals, key=lambda x: (x["validation"], x["probability"]), reverse=True)
 
-def spread_total_signals(game: dict) -> list:
+# ---------------------------------------------------------------------------
+# Señales ML - VALUE SOCCER
+# ---------------------------------------------------------------------------
+def moneyline_soccer_value(game: dict, sport: str) -> list[dict]:
+    outs  = get_market_outcomes(game, "h2h")
+    fair, counts = no_vig_h2h_probabilities(outs)
     signals = []
-    for key, short in [("spreads", "Spread"), ("totals", "Total")]:
-        outs = get_market_outcomes(game, key)
-        seen = set()
-        for o in outs:
-            name = o.get("name")
-            point = o.get("point")
-            price = o.get("price")
-            if name is None or price is None:
-                continue
-            k = (key, name, point)
-            if k in seen:
-                continue
-            seen.add(k)
-            best = best_price_same(outs, name, point)
-            if not best:
-                continue
-            imp = implied_probability_american(best["american_odds"])
-            if imp is None:
-                continue
 
-            # Corrección de vig
-            opposite = "Over" if name == "Under" else ("Under" if name == "Over" else None)
-            if opposite:
-                opp = best_price_same(outs, opposite, point)
-                if opp:
-                    opp_imp = implied_probability_american(opp["american_odds"])
-                    if opp_imp:
-                        total = imp + opp_imp
-                        if total > 0:
-                            imp = imp / total
+    for name, p in fair.items():
+        best = best_price_filtered(outs, name, p)
+        if not best:
+            continue
+        odds  = best["american_odds"]
+        prob  = round(clamp(p * 100, *PROB_CLAMP), 1)
+        ev, edge = safe_ev_edge(p, odds)
+        val   = smooth_validation(prob, odds, counts.get(name, 0), ev, edge)
+        color, label, reason, stake = classify_soccer_value(prob, val, ev, edge, odds)
 
-            prob = round(clamp(imp * 100, *PROB_CLAMP), 1)
-            val = prob
-            odds_val = best["american_odds"]
-            if -130 <= odds_val <= 120:
-                val += 6
-            elif abs(odds_val) > 180:
-                val -= 8
-            val = round(clamp(val, *VAL_CLAMP), 1)
-            color = "blue" if val >= 58 else "red"
-            label = "PROBABLE" if val >= 58 else "EVITAR"
-            reason = "Mercado con precio razonable." if val >= 58 else "Sin suficiente validación."
-            title = f"{name} {point}" if key == "totals" else f"{name} {point:+g}"
-            signals.append(enrich({
-                "market": short, "short_market": short,
-                "selection": title, "probability": prob, "validation": val,
-                "color": color, "label": label, "reason": reason,
-                "stake": "0u-0.25u" if val >= 58 else "0u",
-                "ev": None, "edge": None, "odds": odds_val,
-                "point": point, "bookmaker": best["bookmaker"], "is_primary": False,
-            }))
-    return sorted(signals, key=lambda x: x["validation"], reverse=True)
+        # Solo incluir si tiene value real
+        if color == "red":
+            continue
+
+        fd_odds = fanduel_price(outs, name)
+        signals.append(enrich({
+            "mode":              "value",
+            "sport":             sport,
+            "market":            "Moneyline",
+            "short_market":      "ML",
+            "selection":         name,
+            "probability":       prob,
+            "validation":        val,
+            "color":             color,
+            "label":             label,
+            "reason":            reason,
+            "stake":             stake,
+            "ev":                ev,
+            "edge":              edge,
+            "odds":              odds,
+            "decimal_odds":      best["decimal_odds"],
+            "bookmaker":         best["bookmaker"],
+            "book_count":        counts.get(name, 0),
+            "is_primary":        True,
+            "fanduel_odds":      fd_odds,
+            "fanduel_available": fd_odds is not None,
+        }))
+
+    return sorted(signals, key=lambda x: (x.get("ev") or 0, x["odds"]), reverse=True)
 
 # ---------------------------------------------------------------------------
-# Player Props
+# Predicción por juego
 # ---------------------------------------------------------------------------
-def analyze_player_props(sport_key: str, game_id: str, game_name: str) -> list:
-    prop_markets = PLAYER_PROPS_MARKETS.get(
-        next((k for k, v in SPORTS.items() if v == sport_key), ""), ""
-    )
-    if not prop_markets:
-        return []
-
-    data = fetch_player_props(sport_key, game_id, prop_markets)
-    if not data:
-        return []
-
-    props = []
-    seen = set()
-    for bm in data.get("bookmakers", []):
-        book = bm.get("title", "Unknown")
-        for market in bm.get("markets", []):
-            mkey = market.get("key", "")
-            for outcome in market.get("outcomes", []):
-                player = outcome.get("description", outcome.get("name", ""))
-                name = outcome.get("name", "")
-                price = outcome.get("price")
-                point = outcome.get("point")
-                if not player or price is None:
-                    continue
-                k = (mkey, player, name, point)
-                if k in seen:
-                    continue
-                seen.add(k)
-                imp = implied_probability_american(price)
-                if imp is None:
-                    continue
-                prob = round(clamp(imp * 100, *PROB_CLAMP), 1)
-                val = prob
-                if -130 <= price <= 120:
-                    val += 5
-                val = round(clamp(val, *VAL_CLAMP), 1)
-                if val < 52:
-                    continue
-                market_label = mkey.replace("_", " ").title()
-                selection = f"{player} — {name}{f' {point}' if point else ''}"
-                props.append(enrich({
-                    "market": market_label, "short_market": "PROP",
-                    "selection": selection, "probability": prob, "validation": val,
-                    "color": "blue" if val >= 58 else "red",
-                    "label": "PROP DESTACADO" if val >= 58 else "EVITAR",
-                    "reason": f"Player prop con probabilidad {prob}%.",
-                    "stake": "0u-0.25u", "ev": None, "edge": None,
-                    "odds": int(price), "point": point,
-                    "bookmaker": book, "game": game_name, "is_primary": False,
-                }))
-
-    return sorted(props, key=lambda x: x["validation"], reverse=True)[:3]
-
-# ---------------------------------------------------------------------------
-# Análisis Claude AI por partido
-# ---------------------------------------------------------------------------
-def claude_analyze_game(game_name: str, sport: str, ml_signals: list, spread_total: list) -> str:
-    if not ANTHROPIC_KEY:
-        return "Análisis Claude no disponible (falta ANTHROPIC_API_KEY)."
-
-    cache_key = f"claude:{game_name}:{sport}"
-    cached = _cache_get(cache_key, 3600)
-    if cached:
-        data, _ = cached
-        return data
-
-    ml_text = "\n".join([
-        f"- {s['selection']}: prob {s['probability']}%, odds {s['odds']}, EV {s['ev']}%, validación {s['validation']}%"
-        for s in ml_signals[:2]
-    ])
-    alt_text = "\n".join([
-        f"- {s['selection']}: prob {s['probability']}%, odds {s['odds']}, validación {s['validation']}%"
-        for s in spread_total[:3]
-    ])
-
-    prompt = f"""Eres un analista experto de apuestas deportivas. Analiza este partido de {sport}:
-
-Partido: {game_name}
-
-Señales Moneyline:
-{ml_text}
-
-Señales Spread/Total:
-{alt_text}
-
-Busca información actual sobre lesiones, forma reciente, H2H y condiciones del partido.
-Luego dame un análisis conciso (máximo 3 oraciones) con:
-1. El equipo favorito y por qué
-2. El mercado con mejor valor
-3. Un consejo de stake
-
-Responde en español, directo y sin rodeos."""
-
-    try:
-        headers = {
-            "x-api-key": ANTHROPIC_KEY,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
-        }
-        body = {
-            "model": "claude-haiku-4-5-20251001",
-            "max_tokens": 300,
-            "messages": [{"role": "user", "content": prompt}],
-        }
-        r = requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers=headers,
-            json=body,
-            timeout=30,
-        )
-        if r.status_code != 200:
-            logger.warning("Claude API error %s", r.status_code)
-            return "Análisis no disponible en este momento."
-
-        data = r.json()
-        text = " ".join(
-            block.get("text", "") for block in data.get("content", []) if block.get("type") == "text"
-        ).strip()
-        if not text:
-            text = "Análisis no disponible."
-        _cache_set(cache_key, text)
-        return text
-    except Exception as e:
-        logger.error("Claude analyze error: %s", e)
-        return "Análisis no disponible en este momento."
-
-# ---------------------------------------------------------------------------
-# Predicción completa por partido
-# ---------------------------------------------------------------------------
-def game_prediction(game: dict, sport: str) -> dict:
+def game_prediction_efficiency(game: dict, sport: str) -> dict:
     name = f"{game.get('away_team')} vs {game.get('home_team')}"
-    ml = moneyline_signals(game)
-    alt = spread_total_signals(game)
-
-    # Player props
-    game_id = game.get("id", "")
-    sport_key = SPORTS.get(sport, "")
-    props = analyze_player_props(sport_key, game_id, name) if game_id else []
-
-    # Análisis Claude
-    ai_analysis = claude_analyze_game(name, sport, ml, alt)
-
-    # Mejor pick
+    ml   = moneyline_efficiency(game, sport)
     primary = ml[0] if ml else None
-    secondary = next((s for s in alt if s["color"] != "red"), alt[0] if alt else None)
-
-    # Jugada de oro — mayor validación entre todos
-    all_picks = [s for s in ml + alt if s.get("color") == "green"]
-    gold_pick = sorted(all_picks, key=lambda x: (x.get("validation", 0), x.get("ev") or 0), reverse=True)[0] if all_picks else primary
-
-    time_str = ""
-    s = game.get("commence_time")
-    if s:
-        try:
-            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
-            z = ZoneInfo(LOCAL_TZ)
-            time_str = dt.astimezone(z).strftime("%b %d %I:%M %p")
-        except Exception:
-            time_str = s
-
     return {
-        "sport": sport,
-        "game": name,
-        "game_id": game_id,
-        "home_team": game.get("home_team"),
-        "away_team": game.get("away_team"),
-        "start_time": time_str,
-        "ai_analysis": ai_analysis,
-        "gold_pick": gold_pick,
-        "primary_pick": primary,
-        "secondary_pick": secondary,
-        "ml_signals": ml,
-        "alt_signals": alt,
-        "player_props": props,
-        "all_signals": [s for s in ml + alt if s.get("color") != "red"],
+        "sport":      sport,
+        "game":       name,
+        "home_team":  game.get("home_team"),
+        "away_team":  game.get("away_team"),
+        "start_time": game.get("commence_time"),
+        "best_bet":   primary,
+        "signals":    ml,
+        "mode":       "efficiency",
+    }
+
+def game_prediction_soccer(game: dict, sport: str) -> dict:
+    name    = f"{game.get('away_team')} vs {game.get('home_team')}"
+    signals = moneyline_soccer_value(game, sport)
+    return {
+        "sport":      sport,
+        "game":       name,
+        "home_team":  game.get("home_team"),
+        "away_team":  game.get("away_team"),
+        "start_time": game.get("commence_time"),
+        "signals":    signals,
+        "best_bet":   signals[0] if signals else None,
+        "mode":       "value",
     }
 
 # ---------------------------------------------------------------------------
-# Deduplicación y tickets
+# Tickets
 # ---------------------------------------------------------------------------
 def dedupe(items: list) -> list:
-    seen = set()
+    seen: set = set()
     out = []
     for x in items:
         k = (x.get("game"), x.get("selection"), x.get("short_market"))
@@ -658,70 +500,88 @@ def dedupe(items: list) -> list:
             out.append(x)
     return out
 
-def pick_ok(sig: Optional[dict]) -> bool:
-    if not sig or sig.get("color") == "red" or sig.get("validation", 0) < 55:
+def ticket_ok_efficiency(sig: Optional[dict]) -> bool:
+    if not sig or sig.get("color") not in ("green", "blue"):
+        return False
+    if sig.get("validation", 0) < 60:
         return False
     odds = sig.get("odds")
-    if odds is not None and (odds <= -450 or odds >= 700):
+    if odds is not None and odds <= -500:
         return False
     return True
 
-def build_parlay(name: str, count: int, pool: list) -> Optional[dict]:
+def ticket_ok_value(sig: Optional[dict]) -> bool:
+    if not sig or sig.get("color") not in ("gold", "silver"):
+        return False
+    ev = sig.get("ev") or 0
+    return ev >= VALUE_MIN_EV
+
+def ticket_ok_mega(sig: Optional[dict]) -> bool:
+    if not sig or sig.get("color") not in ("green", "blue", "gold", "silver"):
+        return False
+    return sig.get("probability", 0) >= 60.0 and sig.get("validation", 0) >= 58
+
+def build_ticket(name: str, pool: list, count: int, ok_fn, color: str, risk: str, reason: str) -> Optional[dict]:
     picks = []
-    games_seen = set()
+    games_seen: set = set()
     for s in pool:
         if len(picks) >= count:
             break
-        if s.get("game") in games_seen or not pick_ok(s):
+        if s.get("game") in games_seen or not ok_fn(s):
             continue
         picks.append(s)
         games_seen.add(s.get("game"))
 
-    if len(picks) < count:
+    if len(picks) < min(count, 3):
         return None
 
     comb = 1.0
-    avg = 0.0
+    avg  = 0.0
     for x in picks:
         comb *= clamp(x.get("probability", 1) / 100, 0.01, 0.99)
-        avg += x.get("validation", 0)
+        avg  += x.get("validation", 0)
     avg /= len(picks)
 
     return {
-        "name": name,
-        "count": count,
-        "picks": picks,
-        "validation": round(clamp(avg, *VAL_CLAMP), 1),
+        "name":                 name,
+        "color":                color,
+        "picks":                picks,
+        "validation":           round(clamp(avg, *VAL_CLAMP), 1),
         "combined_probability": round(clamp(comb * 100, 0.1, 95), 1),
+        "risk":                 risk,
+        "reason":               reason,
     }
 
 # ---------------------------------------------------------------------------
-# Dashboard principal
+# Dashboard principal v8.3
 # ---------------------------------------------------------------------------
 def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
-    dash = {
-        "mode": "Pro v8.3 AI-Powered",
+    dash: dict = {
+        "mode":             "Pro v8.3 - Efficiency + Soccer Value",
         "cache_ttl_seconds": CACHE_TTL,
-        "only_today": ONLY_TODAY,
-        "timezone": LOCAL_TZ,
-        "anthropic_status": anthropic_key_status(),
-        "sports": {},
-        "games": [],
-        "gold_picks": [],       # 3 Jugadas de Oro
-        "picks_del_dia": [],    # Top 5 picks
-        "player_props": [],     # Props destacados
-        "parlay_3": None,
-        "parlay_6": None,
+        "only_today":       ONLY_TODAY,
+        "timezone":         LOCAL_TZ,
+        "sports":           {},
+        "games":            [],
+
+        # Eficiencia (MLB/NBA/NHL) - difícil perder
+        "efficiency_green": [],   # 🔒 Sólidos
+        "efficiency_blue":  [],   # 📌 Probables
+
+        # Soccer - value/odds altos
+        "value_gold":   [],       # 💎 Value Alto
+        "value_silver": [],       # 🎯 Value
+
+        # Tickets
+        "ticket_efficiency": None,
+        "ticket_value":      None,
+
         "warnings": [],
     }
 
-    all_gold = []
-    all_picks = []
-    all_props = []
-
-    for label in selected_sports:
-        key = SPORTS.get(label)
-        if not key:
+    # --- Deportes de eficiencia ---
+    for label, key in SPORTS_EFFICIENCY.items():
+        if label not in selected_sports and "ALL" not in selected_sports:
             continue
         try:
             games, from_cache, ttl = fetch_odds(key, force_refresh=force_refresh)
@@ -733,35 +593,96 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
                 "from_cache": from_cache, "cache_seconds_left": ttl,
             }
             for g in games:
-                pred = game_prediction(g, label)
+                pred = game_prediction_efficiency(g, label)
                 dash["games"].append(pred)
-
-                # Recopilar picks globales
-                for sig in pred.get("all_signals", []):
-                    sig_copy = {**sig, "sport": label, "game": pred["game"], "start_time": pred["start_time"]}
-                    all_picks.append(sig_copy)
-                    if sig.get("color") == "green":
-                        all_gold.append(sig_copy)
-
-                for prop in pred.get("player_props", []):
-                    all_props.append({**prop, "sport": label, "game": pred["game"]})
-
+                bb = pred.get("best_bet")
+                if bb:
+                    entry = {**bb, "game": pred["game"], "start_time": pred["start_time"]}
+                    if bb.get("color") == "green":
+                        dash["efficiency_green"].append(entry)
+                    elif bb.get("color") == "blue":
+                        dash["efficiency_blue"].append(entry)
         except Exception as e:
-            logger.error("Error procesando %s: %s", label, e, exc_info=True)
+            logger.error("Error %s: %s", label, e, exc_info=True)
             dash["sports"][label] = {"ok": False, "sport_key": key, "error": str(e)}
             dash["warnings"].append(f"{label}: {e}")
 
+    # --- Soccer value via The Odds API (ligas activas en junio) ---
+    for label, key in SPORTS_SOCCER.items():
+        try:
+            games, from_cache, ttl = fetch_odds(key, force_refresh=force_refresh)
+            total = len(games)
+            games = [g for g in games if is_game_today(g)]
+            if not games:
+                dash["sports"][label] = {
+                    "ok": True, "sport_key": key,
+                    "games_count": 0, "total_api_games": total,
+                    "from_cache": from_cache, "cache_seconds_left": ttl,
+                }
+                continue
+            dash["sports"][label] = {
+                "ok": True, "sport_key": key,
+                "games_count": len(games), "total_api_games": total,
+                "from_cache": from_cache, "cache_seconds_left": ttl,
+            }
+            for g in games:
+                pred = game_prediction_soccer(g, label)
+                for sig in pred.get("signals", []):
+                    entry = {**sig, "game": pred["game"], "start_time": pred["start_time"]}
+                    if sig.get("color") == "gold":
+                        dash["value_gold"].append(entry)
+                    elif sig.get("color") == "silver":
+                        dash["value_silver"].append(entry)
+        except Exception as e:
+            logger.warning("Soccer %s: %s", label, e)
+            dash["sports"][label] = {"ok": False, "sport_key": key, "error": str(e)}
+
     # Ordenar y limitar
-    sorter = lambda x: (x.get("validation", 0), x.get("ev") or 0, x.get("probability", 0))
+    sorter_eff = lambda x: (x.get("validation", 0), x.get("probability", 0))
+    sorter_val = lambda x: (x.get("ev") or 0, x.get("odds", 0))
 
-    dash["gold_picks"] = dedupe(sorted(all_gold, key=sorter, reverse=True))[:3]
-    dash["picks_del_dia"] = dedupe(sorted(all_picks, key=sorter, reverse=True))[:5]
-    dash["player_props"] = dedupe(sorted(all_props, key=sorter, reverse=True))[:3]
+    dash["efficiency_green"] = dedupe(sorted(dash["efficiency_green"], key=sorter_eff, reverse=True))[:10]
+    dash["efficiency_blue"]  = dedupe(sorted(dash["efficiency_blue"],  key=sorter_eff, reverse=True))[:10]
+    dash["value_gold"]       = dedupe(sorted(dash["value_gold"],   key=sorter_val, reverse=True))[:15]
+    dash["value_silver"]     = dedupe(sorted(dash["value_silver"], key=sorter_val, reverse=True))[:10]
 
-    # Parlays
-    parlay_pool = dedupe(sorted(all_picks, key=sorter, reverse=True))
-    dash["parlay_3"] = build_parlay("Parlay 3", 3, parlay_pool)
-    dash["parlay_6"] = build_parlay("Parlay 6", 6, parlay_pool)
+    # Tickets
+    eff_pool = dedupe(dash["efficiency_green"] + dash["efficiency_blue"])
+    eff_pool.sort(key=sorter_eff, reverse=True)
+    dash["ticket_efficiency"] = build_ticket(
+        "🔒 Ticket Eficiencia", eff_pool, 6, ticket_ok_efficiency,
+        "green", "Bajo", "Picks de alta probabilidad en MLB/NBA/NHL."
+    )
+
+    val_pool = dedupe(dash["value_gold"] + dash["value_silver"])
+    val_pool.sort(key=sorter_val, reverse=True)
+    dash["ticket_value"] = build_ticket(
+        "💎 Ticket Value Soccer", val_pool, 6, ticket_ok_value,
+        "gold", "Medio-Alto", "Soccer con odds altos y valor matemático positivo."
+    )
+
+    # Mega parlay 10 legs — los mejores picks del día ordenados por probabilidad
+    mega_pool = dedupe(eff_pool + val_pool)
+    mega_pool.sort(key=lambda x: x.get("probability", 0), reverse=True)
+    dash["ticket_mega"] = build_ticket(
+        "⭐ Mega Parlay — 10 Legs", mega_pool, 10, ticket_ok_mega,
+        "green", "Alto", "Los 10 picks de mayor probabilidad del día."
+    )
+
+    # Picks de alta probabilidad (≥65%) — eficiencia, ordenados por probabilidad
+    all_eff = dedupe(dash["efficiency_green"] + dash["efficiency_blue"])
+    dash["high_prob"] = sorted(
+        [p for p in all_eff if p.get("probability", 0) >= 65.0],
+        key=lambda x: x.get("probability", 0),
+        reverse=True,
+    )[:20]
+
+    # Compatibilidad con frontend v8.2
+    dash["green"]      = dash["efficiency_green"]
+    dash["blue"]       = dash["efficiency_blue"]
+    dash["red"]        = []
+    dash["top_profit"] = dash["value_gold"][:3]
+    dash["tickets"]    = [t for t in [dash["ticket_efficiency"], dash["ticket_value"], dash["ticket_mega"]] if t]
 
     return dash
 
@@ -771,7 +692,6 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
 def debug_all_sports() -> dict:
     res = {
         "api_key": api_key_status(),
-        "anthropic_key": anthropic_key_status(),
         "regions": REGIONS, "markets": MARKETS,
         "cache_ttl_seconds": CACHE_TTL,
         "only_today": ONLY_TODAY, "timezone": LOCAL_TZ,
@@ -786,14 +706,169 @@ def debug_all_sports() -> dict:
                 "ok": True, "sport_key": key,
                 "games_count": len(games), "total_api_games": total,
                 "from_cache": fc, "cache_seconds_left": ttl,
-                "sample_games": [
-                    {"home_team": g.get("home_team"), "away_team": g.get("away_team"),
-                     "commence_time": g.get("commence_time"),
-                     "bookmakers_count": len(g.get("bookmakers", []))}
-                    for g in games[:3]
-                ],
             }
         except Exception as e:
-            logger.error("debug error %s: %s", label, e)
             res["sports"][label] = {"ok": False, "sport_key": key, "error": str(e)}
     return res
+
+# ---------------------------------------------------------------------------
+# API-FOOTBALL (api-sports.io) para soccer
+# ---------------------------------------------------------------------------
+FOOTBALL_API_KEY: str = os.getenv("FOOTBALL_API_KEY", "")
+FOOTBALL_API_HOST = "v3.football.api-sports.io"
+FOOTBALL_API_URL  = "https://v3.football.api-sports.io"
+
+# Liga ID -> (nombre, temporada) — solo ligas activas en junio
+FOOTBALL_LEAGUES: dict[int, tuple[str, int]] = {
+    253: ("MLS",         2025),
+    71:  ("Brasileirao", 2025),
+    128: ("Argentina",   2025),
+    262: ("Mexico",      2025),
+    239: ("Chile",       2025),
+    281: ("Ecuador",     2025),
+    307: ("Saudi Pro",   2024),
+    169: ("Japan J1",    2025),
+    98:  ("Japan J2",    2025),
+    292: ("Colombia",    2025),
+    268: ("Peru",        2025),
+    5:   ("UEFA Nations League", 2024),
+    6:   ("World Cup Qualification", 2025),
+}
+
+_football_cache: dict[str, tuple[float, any]] = {}
+_football_lock  = threading.Lock()
+
+def _football_cache_get(key: str):
+    with _football_lock:
+        entry = _football_cache.get(key)
+        if not entry:
+            return None
+        ts, data = entry
+        if time.time() - ts > CACHE_TTL:
+            return None
+        return data
+
+def _football_cache_set(key: str, data):
+    with _football_lock:
+        _football_cache[key] = (time.time(), data)
+
+def fetch_football_odds(league_id: int, season: int = 2025, force_refresh: bool = False):
+    """Obtiene odds de API-Football para una liga."""
+    if not FOOTBALL_API_KEY:
+        raise RuntimeError("Falta FOOTBALL_API_KEY")
+
+    key = f"football_odds_{league_id}_{season}"
+    if not force_refresh:
+        cached = _football_cache_get(key)
+        if cached is not None:
+            return cached, True
+
+    # Obtener fixtures de hoy
+    today = datetime.now(ZoneInfo(LOCAL_TZ)).strftime("%Y-%m-%d")
+    headers = {
+        "x-rapidapi-key":  FOOTBALL_API_KEY,
+        "x-rapidapi-host": FOOTBALL_API_HOST,
+    }
+
+    # Fixtures de hoy
+    r = requests.get(
+        f"{FOOTBALL_API_URL}/fixtures",
+        headers=headers,
+        params={"league": league_id, "season": season, "date": today},
+        timeout=30,
+    )
+    if r.status_code != 200:
+        raise RuntimeError(f"API-Football error {r.status_code}: {r.text[:200]}")
+
+    fixtures_data = r.json()
+    fixtures = fixtures_data.get("response", [])
+
+    if not fixtures:
+        _football_cache_set(key, [])
+        return [], False
+
+    # Odds para cada fixture
+    games = []
+    for fix in fixtures[:10]:  # max 10 por liga para no gastar requests
+        fixture_id = fix["fixture"]["id"]
+        home = fix["teams"]["home"]["name"]
+        away = fix["teams"]["away"]["name"]
+        start = fix["fixture"]["date"]
+
+        # Obtener odds
+        ro = requests.get(
+            f"{FOOTBALL_API_URL}/odds",
+            headers=headers,
+            params={"fixture": fixture_id},  # sin filtro de bookmaker
+            timeout=30,
+        )
+        if ro.status_code != 200:
+            continue
+
+        odds_data = ro.json().get("response", [])
+        if not odds_data:
+            continue
+
+        # Extraer h2h (Match Winner)
+        bookmakers = []
+        for bk in odds_data:
+            for b in bk.get("bookmakers", []):
+                for m in b.get("bets", []):
+                    if m.get("id") == 1:  # Match Winner
+                        outcomes = []
+                        for o in m.get("values", []):
+                            val = o.get("value")
+                            odd = float(o.get("odd", 0))
+                            # Convertir decimal a americano
+                            if odd >= 2.0:
+                                american = int((odd - 1) * 100)
+                            else:
+                                american = int(-100 / (odd - 1))
+
+                            name = home if val == "Home" else (away if val == "Away" else "Draw")
+                            outcomes.append({
+                                "name":  name,
+                                "price": american,
+                                "point": None,
+                            })
+                        bookmakers.append({
+                            "title":   b.get("name", "Bet365"),
+                            "markets": [{"key": "h2h", "outcomes": outcomes}],
+                        })
+
+        if bookmakers:
+            games.append({
+                "id":            fixture_id,
+                "home_team":     home,
+                "away_team":     away,
+                "commence_time": start,
+                "bookmakers":    bookmakers,
+            })
+
+    _football_cache_set(key, games)
+    return games, False
+
+
+def get_football_value_picks(force_refresh: bool = False) -> list[dict]:
+    """Obtiene picks de value de soccer via API-Football."""
+    if not FOOTBALL_API_KEY:
+        return []
+
+    all_picks = []
+
+    for league_id, (league_name, season) in FOOTBALL_LEAGUES.items():
+        try:
+            games, _ = fetch_football_odds(league_id, season, force_refresh)
+            for g in games:
+                signals = moneyline_soccer_value(g, league_name)
+                for sig in signals:
+                    all_picks.append({
+                        **sig,
+                        "game":       f"{g.get('away_team')} vs {g.get('home_team')}",
+                        "start_time": g.get("commence_time"),
+                        "sport":      league_name,
+                    })
+        except Exception as e:
+            logger.warning("API-Football %s (%d): %s", league_name, league_id, e)
+
+    return all_picks
