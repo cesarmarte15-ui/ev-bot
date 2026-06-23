@@ -6,13 +6,13 @@
 <title>EV Bot Pro v8.4</title>
 <style>
   :root {
-    --bg:#0d0f14; --bg2:#151820; --bg3:#1c2030; --border:#252a3a;
-    --text:#e2e8f0; --muted:#64748b;
-    --green:#22c55e; --green-dim:#14532d;
-    --blue:#3b82f6;  --blue-dim:#1e3a5f;
-    --gold:#f59e0b;  --gold-dim:#451a03;
-    --silver:#94a3b8;--silver-dim:#1e293b;
-    --red:#ef4444;   --red-dim:#450a0a;
+    --bg:#141a24; --bg2:#1e2a3a; --bg3:#232b3e; --border:#2e3a52;
+    --text:#e2e8f0; --muted:#b0b8c8;
+    --green:#22c55e; --green-dim:#1a5c38;
+    --blue:#3b82f6;  --blue-dim:#1e4070;
+    --gold:#f59e0b;  --gold-dim:#5c2e05;
+    --silver:#94a3b8;--silver-dim:#283447;
+    --red:#ef4444;   --red-dim:#5c1111;
     --radius:10px; --font:'Inter',system-ui,sans-serif;
   }
   *{box-sizing:border-box;margin:0;padding:0}
@@ -67,7 +67,7 @@
   .card.blue  {border-left:3px solid var(--blue)}
   .card.gold  {border-left:3px solid var(--gold)}
   .card.silver{border-left:3px solid var(--silver)}
-  .card.red   {border-left:3px solid var(--red);opacity:.6}
+  .card.red   {border-left:3px solid var(--red);opacity:.75}
   .card-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;gap:8px}
   .card-label{font-size:11px;font-weight:700;padding:3px 8px;border-radius:6px;white-space:nowrap}
   .green  .card-label{background:var(--green-dim);color:var(--green)}
@@ -279,7 +279,6 @@
   <button class="tab active" onclick="showTab('dashboard')" id="tab-dashboard">🏆 Dashboard</button>
   <button class="tab" onclick="showTab('todos')"      id="tab-todos">📋 Todos los Juegos</button>
   <button class="tab" onclick="showTab('efficiency')" id="tab-efficiency">🔒 Eficiencia</button>
-  <button class="tab" onclick="showTab('soccer')"     id="tab-soccer">⚽ Soccer</button>
   <button class="tab" onclick="showTab('highprob')"   id="tab-highprob">⭐ Alta Prob</button>
   <button class="tab" onclick="showTab('tickets')"    id="tab-tickets">🎟 Tickets</button>
   <button class="tab" onclick="showTab('debug')"      id="tab-debug">🛠 Debug</button>
@@ -324,22 +323,6 @@
     </div>
     <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Picks que no cumplen criterios en ningún mercado hoy.</p>
     <div class="cards-grid" id="avoid-grid"></div>
-  </div>
-
-  <!-- SOCCER -->
-  <div class="tab-content" id="content-soccer">
-    <div class="section-header">
-      <span class="section-title">💎 Value Alto — Odds Altos con EV+</span>
-      <span class="section-count" id="soccer-gold-count">0</span>
-    </div>
-    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Soccer — Jugadas con valor matemático real y odds positivos.</p>
-    <div class="cards-grid" id="soccer-gold-grid"></div>
-
-    <div class="section-header">
-      <span class="section-title">🎯 Value Moderado</span>
-      <span class="section-count" id="soccer-silver-count">0</span>
-    </div>
-    <div class="cards-grid" id="soccer-silver-grid"></div>
   </div>
 
   <!-- ALTA PROB -->
@@ -403,14 +386,14 @@ function setStatus(state, data) {
   if (state === 'loading') { dot.className = ''; text.textContent = 'Cargando...'; }
   else if (state === 'live') {
     dot.className = 'live';
-    const n = (data.efficiency_green||[]).length + (data.value_gold||[]).length;
+    const n = (data.efficiency_green||[]).length;
     text.textContent = `${n} picks · ${new Date().toLocaleTimeString('es',{hour:'2-digit',minute:'2-digit'})}`;
   } else { dot.className = ''; text.textContent = 'Error'; }
 }
 
 function showLoading() {
   ['top-picks-container','all-games-list','efficiency-green-grid','efficiency-blue-grid',
-   'avoid-grid','soccer-gold-grid','soccer-silver-grid','highprob-list',
+   'avoid-grid','highprob-list',
    'parlays-container','tickets-container','debug-container'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.innerHTML = `<div class="loading-overlay"><div class="loading-spinner"></div> Cargando...</div>`;
@@ -425,8 +408,6 @@ function renderAll(data) {
   renderGrid('efficiency-green-grid', data.efficiency_green || [], 'eff-green-count');
   renderGrid('efficiency-blue-grid',  data.efficiency_blue  || [], 'eff-blue-count');
   renderAvoid(data);
-  renderGrid('soccer-gold-grid',   data.value_gold   || [], 'soccer-gold-count');
-  renderGrid('soccer-silver-grid', data.value_silver || [], 'soccer-silver-count');
   renderHighProb(data);
   renderParlays(data);
   renderTickets(data);
@@ -451,7 +432,6 @@ function renderCacheInfo(data) {
 // ── DASHBOARD ─────────────────────────────────────────────
 function renderDashboard(data) {
   const green = data.efficiency_green || [];
-  const gold  = data.value_gold || [];
   const allG  = data.all_games || [];
   let html = '';
 
@@ -459,17 +439,13 @@ function renderDashboard(data) {
     html += `<div class="section-header"><span class="section-title">🔒 Top Eficiencia</span><span class="section-count">${green.length}</span></div>`;
     html += `<div class="cards-grid">${green.slice(0,6).map(renderCard).join('')}</div>`;
   }
-  if (gold.length) {
-    html += `<div class="section-header" style="margin-top:28px"><span class="section-title">💎 Top Soccer Value</span><span class="section-count">${gold.length}</span></div>`;
-    html += `<div class="cards-grid">${gold.slice(0,6).map(renderCard).join('')}</div>`;
-  }
   if (allG.length) {
     html += `<div class="section-header" style="margin-top:28px"><span class="section-title">📋 Juegos de Hoy</span><span class="section-count">${allG.length}</span></div>`;
     html += `<div class="game-list">${allG.slice(0,8).map((g,i) => renderGameRow(g,i)).join('')}</div>`;
     if (allG.length > 8)
       html += `<p style="font-size:12px;color:var(--muted);text-align:center;margin-top:10px;cursor:pointer" onclick="showTab('todos')">Ver todos los juegos →</p>`;
   }
-  if (!green.length && !gold.length && !allG.length)
+  if (!green.length && !allG.length)
     html = `<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-msg">No hay picks disponibles hoy. Intenta más tarde.</div></div>`;
 
   document.getElementById('top-picks-container').innerHTML = html;
@@ -694,6 +670,10 @@ function renderAvoid(data) {
 // ── PARLAYS (3 / 6 / 10) ─────────────────────────────────
 function renderParlays(data) {
   const container = document.getElementById('parlays-container');
+  if (data.parlay_no_solido) {
+    container.innerHTML = `<div class="empty-state"><div class="empty-icon">🔒</div><div class="empty-msg">No hay jugadas sólidas suficientes hoy</div></div>`;
+    return;
+  }
   const defs = [
     { key:'ticket_3',  cls:'parlay-3'  },
     { key:'ticket_6',  cls:'parlay-6'  },
@@ -708,7 +688,7 @@ function renderParlays(data) {
 // ── TICKETS ESPECIALIZADOS ────────────────────────────────
 function renderTickets(data) {
   const container = document.getElementById('tickets-container');
-  const items = ['ticket_efficiency','ticket_value','ticket_mega'].map(k => data[k]).filter(Boolean);
+  const items = ['ticket_efficiency'].map(k => data[k]).filter(Boolean);
   container.innerHTML = items.length
     ? items.map(t => renderTicketCard(t,'')).join('')
     : `<div class="empty-state"><div class="empty-icon">🎫</div><div class="empty-msg">Sin tickets especializados disponibles hoy.</div></div>`;
