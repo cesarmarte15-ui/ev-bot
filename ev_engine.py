@@ -1,6 +1,7 @@
 """
-ev_engine_v8.4.py
+ev_engine_v8.5.py
 - MLB/NBA/NHL: modo EFICIENCIA - favoritos sólidos, difícil perder
+- v8.5: Player Props, fallback ML→Spread/Total, umbrales más flexibles
 """
 
 import os
@@ -42,9 +43,17 @@ ONLY_TODAY: bool = os.getenv("ONLY_TODAY", "1") == "1"
 CACHE_TTL: int   = int(os.getenv("CACHE_TTL", "900"))
 
 # Umbrales
-EFFICIENCY_MIN_PROB   = 62.0   # % mínimo para pick eficiente
-EFFICIENCY_MIN_VAL    = 65.0   # validación mínima
-EFFICIENCY_MAX_ODDS   = -120   # no más caro que -120 en americano para eficiencia
+EFFICIENCY_MIN_PROB   = 60.0   # % mínimo para pick eficiente
+EFFICIENCY_MIN_VAL    = 63.0   # validación mínima
+EFFICIENCY_MAX_ODDS   = -130   # no más caro que -130 en americano para eficiencia
+
+# Player Props
+PROPS_MARKETS_MLB = "batter_hits,batter_total_bases,batter_rbis"
+PROPS_MARKETS_NBA = "player_points,player_assists,player_rebounds"
+PROPS_MARKETS_NHL = "player_shots_on_goal,player_points"
+PROPS_MIN_PROB    = 60.0
+PROPS_MAX_ODDS    = -110   # no más caro que -110
+PROPS_PER_TEAM    = 2      # máximo 2 props por equipo
 
 EV_CLAMP    = (-25.0, 25.0)
 EDGE_CLAMP  = (-20.0, 20.0)
@@ -286,10 +295,10 @@ def _odds_adjustment(odds: Optional[int]) -> float:
         return 0.0
     if odds <= -1000: return -18.0
     if odds <= -400:  return -10.0
-    if odds <= -250:  return -5.0
-    if odds <= -150:  return 1.0
-    if odds >= 600:   return -10.0
-    if odds >= 300:   return -5.0
+    if odds <= -250:  return -2.0
+    if odds <= -150:  return 2.0
+    if odds >= 600:   return -8.0
+    if odds >= 300:   return -4.0
     return 0.0
 
 def smooth_validation(prob, odds, books, ev=0.0, edge=0.0) -> float:
@@ -309,7 +318,7 @@ def classify_efficiency(prob, val, ev, edge, odds) -> tuple[str, str, str, str]:
     ev    = ev or 0.0
     edge  = edge or 0.0
 
-    if prob >= EFFICIENCY_MIN_PROB and val >= EFFICIENCY_MIN_VAL and ev >= 0 and edge >= 0:
+    if prob >= EFFICIENCY_MIN_PROB and val >= EFFICIENCY_MIN_VAL and ev >= -1.0 and edge >= -0.5:
         return "green", "🔒 SÓLIDO", "Favorito con alta probabilidad y buen valor.", "0.5u-1u"
 
     if prob >= 58 and val >= 60:
@@ -416,7 +425,7 @@ def spread_signals(game: dict, sport: str) -> list[dict]:
             "fanduel_available": fd_odds is not None,
             "point":             point,
         }))
-    return sorted(signals, key=lambda x: (x["validation"], x["probability"]), reverse=True)
+    return sorted(signals, key=lambda x: (x.get("ev") or 0, x["validation"], x["probability"]), reverse=True)
 
 
 def total_signals(game: dict, sport: str) -> list[dict]:
@@ -460,11 +469,116 @@ def total_signals(game: dict, sport: str) -> list[dict]:
             "fanduel_available": fd_odds is not None,
             "point":             point,
         }))
-    return sorted(signals, key=lambda x: (x["validation"], x["probability"]), reverse=True)
+    return sorted(signals, key=lambda x: (x.get("ev") or 0, x["validation"], x["probability"]), reverse=True)
 
 
 # ---------------------------------------------------------------------------
-# Predicción completa por juego (v8.4)
+# Player Props
+# ---------------------------------------------------------------------------
+def fetch_player_props(sport_key: str, game_id: str, sport_label: str, force_refresh: bool = False) -> list[dict]:
+    """Obtiene player props para un juego específico."""
+    cache_key = f"props:{game_id}"
+    if not force_refresh:
+        cached = _cache_get(cache_key)
+        if cached:
+            data, _ = cached
+            return data
+
+    if sport_label == "MLB":
+        markets = PROPS_MARKETS_MLB
+    elif sport_label == "NBA":
+        markets = PROPS_MARKETS_NBA
+    elif sport_label == "NHL":
+        markets = PROPS_MARKETS_NHL
+    else:
+        return []
+
+    if not API_KEY:
+        return []
+
+    url = f"https://api.the-odds-api.com/v4/sports/{sport_key}/events/{game_id}/odds"
+    params = {
+        "apiKey":     API_KEY,
+        "regions":    "us",
+        "markets":    markets,
+        "oddsFormat": "american",
+    }
+    try:
+        r = requests.get(url, params=params, timeout=20)
+        if r.status_code != 200:
+            return []
+        data = r.json()
+    except Exception:
+        return []
+
+    props = []
+    teams_count: dict[str, int] = {}
+
+    for bookmaker in data.get("bookmakers", []):
+        book = bookmaker.get("title", "")
+        for market in bookmaker.get("markets", []):
+            mkey = market.get("key", "")
+            for outcome in market.get("outcomes", []):
+                player = outcome.get("description", outcome.get("name", ""))
+                name   = outcome.get("name", "")
+                price  = outcome.get("price")
+                point  = outcome.get("point")
+                team   = outcome.get("team", "")
+
+                if price is None:
+                    continue
+                if name not in ("Over",):
+                    continue
+                if price < PROPS_MAX_ODDS:
+                    continue
+
+                imp = implied_probability_american(price)
+                if imp is None or imp * 100 < PROPS_MIN_PROB:
+                    continue
+
+                team_key = team or player[:10]
+                if teams_count.get(team_key, 0) >= PROPS_PER_TEAM:
+                    continue
+
+                prob = round(clamp(imp * 100, *PROB_CLAMP), 1)
+                dec  = american_to_decimal(price)
+                ev   = round(clamp(calculate_ev(imp, dec) * 100, *EV_CLAMP), 1) if dec else None
+
+                props.append({
+                    "mode":         "props",
+                    "sport":        sport_label,
+                    "market":       mkey.replace("_", " ").title(),
+                    "short_market": "PROP",
+                    "player":       player,
+                    "selection":    f"{player} {name} {point}",
+                    "team":         team,
+                    "probability":  prob,
+                    "odds":         int(price),
+                    "decimal_odds": dec,
+                    "bookmaker":    book,
+                    "ev":           ev,
+                    "point":        point,
+                    "color":        "green" if prob >= 65 else "blue",
+                    "label":        "🎯 PROP SÓLIDO" if prob >= 65 else "📌 PROP PROBABLE",
+                    "stake":        "0.25u",
+                })
+                teams_count[team_key] = teams_count.get(team_key, 0) + 1
+
+    seen: set = set()
+    unique = []
+    for p in sorted(props, key=lambda x: x["probability"], reverse=True):
+        k = (p["player"], p["market"])
+        if k not in seen:
+            seen.add(k)
+            unique.append(p)
+
+    result = unique[:20]
+    _cache_set(cache_key, result)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Predicción completa por juego (v8.5)
 # ---------------------------------------------------------------------------
 def best_market(ml: Optional[dict], spread: Optional[dict], total: Optional[dict]) -> Optional[dict]:
     candidates = [(n, s) for n, s in [("Moneyline", ml), ("Spread", spread), ("Total", total)] if s]
@@ -568,13 +682,14 @@ def build_ticket(name: str, pool: list, count: int, ok_fn, color: str, risk: str
 # ---------------------------------------------------------------------------
 def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
     dash: dict = {
-        "mode":             "Pro v8.4 - Full Market Analysis",
+        "mode":             "Pro v8.5 - Full Market Analysis",
         "cache_ttl_seconds": CACHE_TTL,
         "only_today":       ONLY_TODAY,
         "timezone":         LOCAL_TZ,
         "sports":           {},
         "games":            [],
         "all_games":        [],
+        "all_props":        [],
 
         # Eficiencia (MLB/NBA/NHL)
         "efficiency_green": [],
@@ -604,8 +719,33 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
             }
             for g in games:
                 full = game_prediction_full(g, label)
+                # Fetch player props para este juego
+                game_id = g.get("id", "")
+                if game_id:
+                    props = fetch_player_props(key, game_id, label, force_refresh=force_refresh)
+                    full["props"] = props
+                    dash["all_props"].extend(props)
+                else:
+                    full["props"] = []
                 dash["all_games"].append(full)
+                # Fallback: si ML no es green/blue, buscar mejor jugada en Spread o Total
                 bb = full["ml"][0] if full["ml"] else None
+                bb_spread = full["spread"][0] if full["spread"] else None
+                bb_total  = full["total"][0]  if full["total"]  else None
+
+                if not bb or bb.get("color") == "red":
+                    alternatives = [s for s in [bb_spread, bb_total] if s and s.get("color") in ("green", "blue")]
+                    if alternatives:
+                        best_alt = sorted(alternatives, key=lambda x: (x.get("validation", 0), x.get("ev") or 0), reverse=True)[0]
+                        best_alt["fallback_from_ml"] = True
+                        best_alt["label"] = best_alt.get("label", "") + " (Alt)"
+                        bb = best_alt
+                    elif bb and bb.get("color") == "red":
+                        if bb.get("probability", 0) >= 55:
+                            bb = {**bb, "color": "yellow", "label": "🔶 ESPECULATIVO",
+                                  "reason": "ML sin valor claro — apuesta pequeña si acaso.", "stake": "0.1u"}
+                        else:
+                            bb = None
                 pred = {
                     "sport": label, "game": full["game"],
                     "home_team": full["home_team"], "away_team": full["away_team"],
@@ -679,6 +819,13 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
         dash["ticket_efficiency"],
         dash["ticket_3"], dash["ticket_6"], dash["ticket_10"],
     ] if t]
+
+    # Ordenar props
+    dash["all_props"] = sorted(
+        dash.get("all_props", []),
+        key=lambda x: x.get("probability", 0),
+        reverse=True,
+    )[:30]
 
     return dash
 

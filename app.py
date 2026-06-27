@@ -24,7 +24,7 @@ def api_dashboard():
     try:
         selected = request.args.getlist("sports") or ["ALL"]
         force    = request.args.get("refresh", "0") == "1"
-        logger.info("Dashboard v8.4: sports=%s force=%s", selected, force)
+        logger.info("Dashboard v8.5: sports=%s force=%s", selected, force)
         data = get_dashboard(selected, force_refresh=force)
         return jsonify(data)
     except Exception as e:
@@ -80,9 +80,23 @@ def api_clear_cache():
     clear_cache()
     return jsonify({"ok": True, "message": "Cache limpiado"})
 
+@app.route("/api/props")
+def api_props():
+    """Player props MLB/NBA/NHL."""
+    try:
+        selected = request.args.getlist("sports") or ["ALL"]
+        force    = request.args.get("refresh", "0") == "1"
+        data     = get_dashboard(selected, force_refresh=force)
+        return jsonify({
+            "ok":        True,
+            "all_props": data.get("all_props", []),
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
 @app.route("/health")
 def health():
-    return jsonify({"ok": True, "version": "8.4"})
+    return jsonify({"ok": True, "version": "8.5"})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
