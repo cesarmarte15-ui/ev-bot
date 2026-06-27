@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>EV Bot Pro v8.4</title>
+<title>EV Bot Pro v8.5</title>
 <style>
   :root {
     --bg:#141a24; --bg2:#1e2a3a; --bg3:#232b3e; --border:#2e3a52;
@@ -265,7 +265,7 @@
   <div class="logo">
     <span class="logo-icon">📊</span>
     <span class="logo-text">EV Bot Pro</span>
-    <span class="version-badge">v8.4</span>
+    <span class="version-badge">v8.5</span>
   </div>
   <div class="header-right">
     <span id="status-dot"></span>
@@ -281,6 +281,7 @@
   <button class="tab" onclick="showTab('efficiency')" id="tab-efficiency">🔒 Eficiencia</button>
   <button class="tab" onclick="showTab('highprob')"   id="tab-highprob">⭐ Alta Prob</button>
   <button class="tab" onclick="showTab('tickets')"    id="tab-tickets">🎟 Tickets</button>
+  <button class="tab" onclick="showTab('props')"      id="tab-props">🎯 Props</button>
   <button class="tab" onclick="showTab('debug')"      id="tab-debug">🛠 Debug</button>
 </div>
 
@@ -345,6 +346,16 @@
     <div id="tickets-container"></div>
   </div>
 
+  <!-- PROPS -->
+  <div class="tab-content" id="content-props">
+    <div class="section-header">
+      <span class="section-title">🎯 Player Props — Over seleccionados</span>
+      <span class="section-count" id="props-count">0</span>
+    </div>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">MLB · NBA · NHL — Props con ≥60% de probabilidad implícita. Máx. 2 por equipo. Solo Overs.</p>
+    <div class="prob-list" id="props-list"></div>
+  </div>
+
   <!-- DEBUG -->
   <div class="tab-content" id="content-debug">
     <div class="section-header"><span class="section-title">🛠 Estado de Ligas</span></div>
@@ -393,7 +404,7 @@ function setStatus(state, data) {
 
 function showLoading() {
   ['top-picks-container','all-games-list','efficiency-green-grid','efficiency-blue-grid',
-   'avoid-grid','highprob-list',
+   'avoid-grid','highprob-list','props-list',
    'parlays-container','tickets-container','debug-container'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.innerHTML = `<div class="loading-overlay"><div class="loading-spinner"></div> Cargando...</div>`;
@@ -411,6 +422,7 @@ function renderAll(data) {
   renderHighProb(data);
   renderParlays(data);
   renderTickets(data);
+  renderProps(data);
   renderDebug(data);
 }
 
@@ -787,6 +799,57 @@ function renderHighProb(data) {
           <div class="prob-badges">${fdBadge}<span class="odds-badge ${oddsRaw>0?'odds-pos':'odds-neg'}">${oddsStr}</span></div>
           <div class="prob-fd-line">${fdLine}</div>
           <button class="btn-copy" data-pick="${escAttr(fdLine)}" onclick="copyPick(this,this.dataset.pick)">Copiar</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ── PROPS ─────────────────────────────────────────────────
+function renderProps(data) {
+  const props = data.all_props || [];
+  const list  = document.getElementById('props-list');
+  const ct    = document.getElementById('props-count');
+  if (ct) ct.textContent = props.length;
+
+  if (!props.length) {
+    list.innerHTML = `<div class="empty-state"><div class="empty-icon">🎯</div><div class="empty-msg">Sin props disponibles hoy. Los props requieren mercados activos en The Odds API.</div></div>`;
+    return;
+  }
+
+  list.innerHTML = props.map((p, i) => {
+    const prob    = p.probability || 0;
+    const tier    = prob >= 65 ? 'tier-a' : 'tier-b';
+    const probStr = prob.toFixed(1) + '%';
+    const oddsRaw = p.odds;
+    const oddsStr = fmtOdds(oddsRaw) || '--';
+    const oc      = oddsRaw > 0 ? 'odds-pos' : 'odds-neg';
+    const ev      = p.ev != null ? (p.ev > 0 ? '+' : '') + p.ev.toFixed(1) + '%' : '';
+    const mkt     = p.market || 'Prop';
+    const pickLine = `${p.selection || ''} · ${oddsStr}`;
+
+    return `
+      <div class="prob-row">
+        <div class="prob-rank">#${i + 1}</div>
+        <div class="prob-circle ${tier}">${probStr}</div>
+        <div class="prob-info">
+          <div class="prob-sel">${p.selection || ''}</div>
+          <div class="prob-game" style="margin-bottom:4px">${p.game || ''} · ${p.sport || ''}</div>
+          <div class="prob-badges">
+            <span class="card-sport">${mkt}</span>
+            <span class="card-label lbl-${p.color || 'blue'}" style="font-size:10px;padding:2px 7px">${p.label || ''}</span>
+            ${ev ? `<span style="font-size:10px;color:var(--muted)">EV ${ev}</span>` : ''}
+          </div>
+          <div class="prob-bar-wrap" style="margin-top:6px">
+            <div class="prob-bar-fill ${tier}" style="width:${Math.min(prob, 100).toFixed(1)}%"></div>
+          </div>
+        </div>
+        <div class="prob-right">
+          <div class="prob-badges">
+            <span class="odds-badge ${oc}">${oddsStr}</span>
+          </div>
+          <div style="font-size:11px;color:var(--muted);text-align:right">${p.bookmaker || ''}</div>
+          <div style="font-size:11px;color:var(--muted);text-align:right">${p.stake || '0.25u'}</div>
+          <button class="btn-copy" data-pick="${escAttr(pickLine)}" onclick="copyPick(this,this.dataset.pick)">Copiar</button>
         </div>
       </div>`;
   }).join('');
