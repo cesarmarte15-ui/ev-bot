@@ -88,15 +88,16 @@ def api_props():
         force    = request.args.get("refresh", "0") == "1"
         data     = get_dashboard(selected, force_refresh=force)
         return jsonify({
-            "ok":        True,
-            "all_props": data.get("all_props", []),
+            "ok":            True,
+            "all_props":     data.get("all_props", []),
+            "props_by_game": data.get("props_by_game", {}),
         })
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
 @app.route("/health")
 def health():
-    return jsonify({"ok": True, "version": "8.5"})
+    return jsonify({"ok": True, "version": "8.6"})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))

@@ -11,6 +11,7 @@
     --green:#22c55e; --green-dim:#1a5c38;
     --blue:#3b82f6;  --blue-dim:#1e4070;
     --gold:#f59e0b;  --gold-dim:#5c2e05;
+    --yellow:#f5c842;--yellow-dim:#3a2900;
     --silver:#94a3b8;--silver-dim:#283447;
     --red:#ef4444;   --red-dim:#5c1111;
     --radius:10px; --font:'Inter',system-ui,sans-serif;
@@ -68,6 +69,7 @@
   .card.gold  {border-left:3px solid var(--gold)}
   .card.silver{border-left:3px solid var(--silver)}
   .card.red   {border-left:3px solid var(--red);opacity:.75}
+  .card.yellow{border-left:3px solid var(--yellow)}
   .card-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;gap:8px}
   .card-label{font-size:11px;font-weight:700;padding:3px 8px;border-radius:6px;white-space:nowrap}
   .green  .card-label{background:var(--green-dim);color:var(--green)}
@@ -75,12 +77,14 @@
   .gold   .card-label{background:var(--gold-dim); color:var(--gold)}
   .silver .card-label{background:var(--silver-dim);color:var(--silver)}
   .red    .card-label{background:var(--red-dim);  color:var(--red)}
+  .yellow .card-label{background:var(--yellow-dim);color:var(--yellow)}
   /* standalone label (outside .card context) */
   .lbl-green {background:var(--green-dim);color:var(--green)}
   .lbl-blue  {background:var(--blue-dim); color:var(--blue)}
   .lbl-gold  {background:var(--gold-dim); color:var(--gold)}
   .lbl-silver{background:var(--silver-dim);color:var(--silver)}
   .lbl-red   {background:var(--red-dim);  color:var(--red)}
+  .lbl-yellow{background:var(--yellow-dim);color:var(--yellow)}
   .card-sport{font-size:11px;color:var(--muted);background:var(--bg3);padding:3px 8px;border-radius:6px}
   .card-game{font-size:13px;font-weight:600;margin-bottom:6px;line-height:1.4}
   .card-selection{font-size:15px;font-weight:700;margin-bottom:10px}
@@ -126,6 +130,7 @@
   .mkt-dot.blue  {background:var(--blue-dim); color:var(--blue)}
   .mkt-dot.gold  {background:var(--gold-dim); color:var(--gold)}
   .mkt-dot.red   {background:var(--red-dim);  color:var(--red)}
+  .mkt-dot.yellow{background:var(--yellow-dim);color:var(--yellow)}
   .mkt-dot.none  {background:var(--bg3);color:var(--muted);opacity:.4}
   .game-row-right{display:flex;align-items:center;gap:8px;flex-shrink:0}
   .market-pill{font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;border:1px solid;white-space:nowrap}
@@ -133,6 +138,7 @@
   .market-pill.blue  {background:var(--blue-dim); color:var(--blue); border-color:var(--blue)}
   .market-pill.gold  {background:var(--gold-dim); color:var(--gold); border-color:var(--gold)}
   .market-pill.red   {background:var(--red-dim);  color:var(--red);  border-color:var(--red)}
+  .market-pill.yellow{background:var(--yellow-dim);color:var(--yellow);border-color:var(--yellow)}
   .market-pill.muted {background:var(--bg3);color:var(--muted);border-color:var(--border)}
 
   /* MODAL */
@@ -154,6 +160,7 @@
   .best-market-banner.blue {background:var(--blue-dim); border-color:var(--blue)}
   .best-market-banner.gold {background:var(--gold-dim); border-color:var(--gold)}
   .best-market-banner.red  {background:var(--red-dim);  border-color:var(--red)}
+  .best-market-banner.yellow{background:var(--yellow-dim);border-color:var(--yellow)}
   .modal-markets{display:flex;flex-direction:column;gap:10px}
   .modal-market-section{background:var(--bg3);border-radius:var(--radius);
     overflow:hidden;border:1px solid var(--border)}
@@ -166,7 +173,8 @@
   .modal-pick-row.pick-green{border-left:3px solid var(--green)}
   .modal-pick-row.pick-blue {border-left:3px solid var(--blue)}
   .modal-pick-row.pick-gold {border-left:3px solid var(--gold)}
-  .modal-pick-row.pick-red  {opacity:.45}
+  .modal-pick-row.pick-red   {opacity:.45}
+  .modal-pick-row.pick-yellow{border-left:3px solid var(--yellow);opacity:.85}
   .modal-pick-left{flex:1;min-width:0}
   .modal-pick-sel{font-size:13px;font-weight:600}
   .modal-pick-sub{font-size:11px;color:var(--muted);margin-top:2px}
@@ -185,7 +193,8 @@
   .ticket-badge{font-size:11px;font-weight:600;padding:3px 10px;border-radius:20px;border:1px solid}
   .ticket-badge.green{color:var(--green);border-color:var(--green);background:var(--green-dim)}
   .ticket-badge.blue {color:var(--blue); border-color:var(--blue); background:var(--blue-dim)}
-  .ticket-badge.gold {color:var(--gold); border-color:var(--gold); background:var(--gold-dim)}
+  .ticket-badge.gold  {color:var(--gold); border-color:var(--gold); background:var(--gold-dim)}
+  .ticket-badge.yellow{color:var(--yellow);border-color:var(--yellow);background:var(--yellow-dim)}
   .ticket-picks{display:flex;flex-direction:column;gap:8px}
   .ticket-pick{display:flex;align-items:center;justify-content:space-between;
     background:var(--bg3);border-radius:7px;padding:10px 14px;gap:8px;flex-wrap:wrap}
@@ -223,6 +232,16 @@
   .prob-right{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0}
   .prob-fd-line{font-family:'Courier New',monospace;font-size:11px;color:#38bdf8;text-align:right}
   .prob-badges{display:flex;gap:6px;align-items:center}
+
+  /* PROPS */
+  .props-game-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);
+    padding:16px;margin-bottom:12px}
+  .props-game-header{display:flex;justify-content:space-between;align-items:center;
+    margin-bottom:12px;gap:8px;flex-wrap:wrap}
+  .props-game-name{font-size:13px;font-weight:600;margin-left:8px}
+  .props-picks{display:flex;flex-direction:column;gap:10px}
+  .props-pick-row{display:flex;align-items:center;gap:12px;background:var(--bg3);
+    border-radius:7px;padding:10px 12px}
 
   /* SPORTS TABLE */
   .sports-table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:24px}
@@ -397,7 +416,7 @@ function setStatus(state, data) {
   if (state === 'loading') { dot.className = ''; text.textContent = 'Cargando...'; }
   else if (state === 'live') {
     dot.className = 'live';
-    const n = (data.efficiency_green||[]).length;
+    const n = (data.efficiency_green||[]).length + (data.efficiency_blue||[]).length;
     text.textContent = `${n} picks · ${new Date().toLocaleTimeString('es',{hour:'2-digit',minute:'2-digit'})}`;
   } else { dot.className = ''; text.textContent = 'Error'; }
 }
@@ -706,6 +725,18 @@ function renderTickets(data) {
     : `<div class="empty-state"><div class="empty-icon">🎫</div><div class="empty-msg">Sin tickets especializados disponibles hoy.</div></div>`;
 }
 
+function picksBorderColor(picks) {
+  let greens = 0, blues = 0;
+  for (const p of picks) {
+    if (p.color === 'green') greens++;
+    else if (p.color === 'blue') blues++;
+  }
+  const total = picks.length || 1;
+  if (greens > total / 2) return 'var(--green)';
+  if (blues  > total / 2) return 'var(--blue)';
+  return 'var(--yellow)';
+}
+
 function renderTicketCard(t, extraClass) {
   const tPicks = t.picks || [];
   const picks  = tPicks.map(p => {
@@ -730,10 +761,11 @@ function renderTicketCard(t, extraClass) {
       </div>`;
   }).join('');
 
-  const bc  = t.color==='gold'?'gold':t.color==='blue'?'blue':'green';
-  const uid = 'cp-' + Math.random().toString(36).slice(2,8);
+  const bc          = t.color==='gold'?'gold':t.color==='blue'?'blue':'green';
+  const uid         = 'cp-' + Math.random().toString(36).slice(2,8);
+  const borderColor = picksBorderColor(tPicks);
   return `
-    <div class="ticket-card ${extraClass}">
+    <div class="ticket-card ${extraClass}" style="border-top-color:${borderColor}">
       <div class="ticket-header">
         <span class="ticket-title">${t.name||'Ticket'}</span>
         <div class="ticket-meta">
@@ -806,51 +838,60 @@ function renderHighProb(data) {
 
 // ── PROPS ─────────────────────────────────────────────────
 function renderProps(data) {
-  const props = data.all_props || [];
-  const list  = document.getElementById('props-list');
-  const ct    = document.getElementById('props-count');
+  const props  = data.all_props    || [];
+  const byGame = data.props_by_game || {};
+  const list   = document.getElementById('props-list');
+  const ct     = document.getElementById('props-count');
   if (ct) ct.textContent = props.length;
 
   if (!props.length) {
-    list.innerHTML = `<div class="empty-state"><div class="empty-icon">🎯</div><div class="empty-msg">Sin props disponibles hoy. Los props requieren mercados activos en The Odds API.</div></div>`;
+    list.innerHTML = `<div class="empty-state"><div class="empty-icon">🎯</div><div class="empty-msg">Sin props disponibles hoy — la API no tiene mercados activos para estos juegos.</div></div>`;
     return;
   }
 
-  list.innerHTML = props.map((p, i) => {
-    const prob    = p.probability || 0;
-    const tier    = prob >= 65 ? 'tier-a' : 'tier-b';
-    const probStr = prob.toFixed(1) + '%';
-    const oddsRaw = p.odds;
-    const oddsStr = fmtOdds(oddsRaw) || '--';
-    const oc      = oddsRaw > 0 ? 'odds-pos' : 'odds-neg';
-    const ev      = p.ev != null ? (p.ev > 0 ? '+' : '') + p.ev.toFixed(1) + '%' : '';
-    const mkt     = p.market || 'Prop';
-    const pickLine = `${p.selection || ''} · ${oddsStr}`;
+  list.innerHTML = Object.entries(byGame).map(([gameName, gameProps]) => {
+    const sport = gameProps[0]?.sport || '';
+
+    const propRows = gameProps.map(p => {
+      const prob     = p.probability || 0;
+      const tier     = prob >= 65 ? 'tier-a' : 'tier-b';
+      const probStr  = prob.toFixed(1) + '%';
+      const oddsRaw  = p.odds;
+      const oddsStr  = fmtOdds(oddsRaw) || '--';
+      const oc       = oddsRaw > 0 ? 'odds-pos' : 'odds-neg';
+      const ev       = p.ev != null ? (p.ev > 0 ? '+' : '') + p.ev.toFixed(1) + '%' : '';
+      const pickLine = `${p.selection || ''} · ${oddsStr}`;
+      const teamTag  = p.team ? `<span class="card-sport">${p.team}</span>` : '';
+      return `
+        <div class="props-pick-row">
+          <div class="prob-circle ${tier}" style="width:44px;height:44px;font-size:11px;flex-shrink:0">${probStr}</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:600;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${p.selection || ''}</div>
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+              ${teamTag}
+              <span class="card-sport">${p.market || 'Prop'}</span>
+              <span class="card-label lbl-${p.color || 'blue'}" style="font-size:10px;padding:2px 7px">${p.label || ''}</span>
+              ${ev ? `<span style="font-size:10px;color:var(--muted)">EV ${ev}</span>` : ''}
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0">
+            <span class="odds-badge ${oc}">${oddsStr}</span>
+            <span style="font-size:10px;color:var(--muted)">${p.bookmaker || ''}</span>
+            <button class="btn-copy" style="font-size:10px;padding:3px 8px" data-pick="${escAttr(pickLine)}" onclick="copyPick(this,this.dataset.pick)">Copiar</button>
+          </div>
+        </div>`;
+    }).join('');
 
     return `
-      <div class="prob-row">
-        <div class="prob-rank">#${i + 1}</div>
-        <div class="prob-circle ${tier}">${probStr}</div>
-        <div class="prob-info">
-          <div class="prob-sel">${p.selection || ''}</div>
-          <div class="prob-game" style="margin-bottom:4px">${p.game || ''} · ${p.sport || ''}</div>
-          <div class="prob-badges">
-            <span class="card-sport">${mkt}</span>
-            <span class="card-label lbl-${p.color || 'blue'}" style="font-size:10px;padding:2px 7px">${p.label || ''}</span>
-            ${ev ? `<span style="font-size:10px;color:var(--muted)">EV ${ev}</span>` : ''}
+      <div class="props-game-card">
+        <div class="props-game-header">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span class="card-sport">${sport}</span>
+            <span class="props-game-name">${gameName}</span>
           </div>
-          <div class="prob-bar-wrap" style="margin-top:6px">
-            <div class="prob-bar-fill ${tier}" style="width:${Math.min(prob, 100).toFixed(1)}%"></div>
-          </div>
+          <span class="section-count">${gameProps.length} prop${gameProps.length !== 1 ? 's' : ''}</span>
         </div>
-        <div class="prob-right">
-          <div class="prob-badges">
-            <span class="odds-badge ${oc}">${oddsStr}</span>
-          </div>
-          <div style="font-size:11px;color:var(--muted);text-align:right">${p.bookmaker || ''}</div>
-          <div style="font-size:11px;color:var(--muted);text-align:right">${p.stake || '0.25u'}</div>
-          <button class="btn-copy" data-pick="${escAttr(pickLine)}" onclick="copyPick(this,this.dataset.pick)">Copiar</button>
-        </div>
+        <div class="props-picks">${propRows}</div>
       </div>`;
   }).join('');
 }

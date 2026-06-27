@@ -657,20 +657,25 @@ def build_ticket(name: str, pool: list, count: int, ok_fn, color: str, risk: str
         picks.append(s)
         games_seen.add(s.get("game"))
 
-    if len(picks) < min(count, 3):
+    real_count = len(picks)
+    if real_count < min(count, 3):
         return None
+
+    dynamic_name = name.replace(str(count), str(real_count)) if str(count) in name else f"{name} ({real_count})"
 
     comb = 1.0
     avg  = 0.0
     for x in picks:
         comb *= clamp(x.get("probability", 1) / 100, 0.01, 0.99)
         avg  += x.get("validation", 0)
-    avg /= len(picks)
+    avg /= real_count
 
     return {
-        "name":                 name,
+        "name":                 dynamic_name,
         "color":                color,
         "picks":                picks,
+        "picks_count":          real_count,
+        "target_count":         count,
         "validation":           round(clamp(avg, *VAL_CLAMP), 1),
         "combined_probability": round(clamp(comb * 100, 0.1, 95), 1),
         "risk":                 risk,
@@ -818,7 +823,7 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
     dash["tickets"] = [t for t in [
         dash["ticket_efficiency"],
         dash["ticket_3"], dash["ticket_6"], dash["ticket_10"],
-    ] if t]
+    ] if t and t.get("picks_count", 0) >= 3]
 
     # Ordenar props
     dash["all_props"] = sorted(
@@ -826,6 +831,15 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
         key=lambda x: x.get("probability", 0),
         reverse=True,
     )[:30]
+
+    # Agrupar props por partido
+    props_by_game: dict = {}
+    for prop in dash["all_props"]:
+        game_key = prop.get("game", "Unknown")
+        if game_key not in props_by_game:
+            props_by_game[game_key] = []
+        props_by_game[game_key].append(prop)
+    dash["props_by_game"] = props_by_game
 
     return dash
 
