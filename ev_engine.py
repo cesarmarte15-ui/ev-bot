@@ -47,6 +47,8 @@ EFFICIENCY_MIN_PROB   = 60.0   # % mínimo para pick eficiente
 EFFICIENCY_MIN_VAL    = 63.0   # validación mínima
 EFFICIENCY_MAX_ODDS   = -130   # no más caro que -130 en americano para eficiencia
 
+MAX_ODDS_DIFF_PCT = float(os.getenv("MAX_ODDS_DIFF_PCT", "0.06"))
+
 # Player Props
 PROPS_MARKETS_MLB = "batter_hits,batter_total_bases,batter_rbis"
 PROPS_MARKETS_NBA = "player_points,player_assists,player_rebounds"
@@ -259,7 +261,7 @@ def best_price_filtered(outcomes: list, name: str, fair: float, point=None) -> O
         })
     if not cand:
         return None
-    sane = [c for c in cand if c["diff"] <= 0.25]
+    sane = [c for c in cand if c["diff"] <= MAX_ODDS_DIFF_PCT]
     if not sane:
         fallback = sorted(cand, key=lambda c: c["diff"])[0]
         return fallback
@@ -318,7 +320,8 @@ def classify_efficiency(prob, val, ev, edge, odds) -> tuple[str, str, str, str]:
     ev    = ev or 0.0
     edge  = edge or 0.0
 
-    if prob >= EFFICIENCY_MIN_PROB and val >= EFFICIENCY_MIN_VAL and ev >= -1.0 and edge >= -0.5:
+    if (prob >= EFFICIENCY_MIN_PROB and val >= EFFICIENCY_MIN_VAL and ev >= -1.0 and edge >= -0.5
+            and (odds is None or odds >= EFFICIENCY_MAX_ODDS)):
         return "green", "🔒 SÓLIDO", "Favorito con alta probabilidad y buen valor.", "0.5u-1u"
 
     if prob >= 58 and val >= 60:
@@ -511,58 +514,120 @@ def fetch_player_props(sport_key: str, game_id: str, sport_label: str, force_ref
     except Exception:
         return []
 
-    props = []
-    teams_count: dict[str, int] = {}
+    # Agrupar por clave (player, market, point) -> bookmaker -> {"Over": price, "Under": price}
+    by_key: dict[tuple, dict[str, dict[str, float]]] = {}
+    meta: dict[tuple, dict] = {}
 
     for bookmaker in data.get("bookmakers", []):
         book = bookmaker.get("title", "")
         for market in bookmaker.get("markets", []):
             mkey = market.get("key", "")
             for outcome in market.get("outcomes", []):
+                name = outcome.get("name", "")
+                if name not in ("Over", "Under"):
+                    continue
                 player = outcome.get("description", outcome.get("name", ""))
-                name   = outcome.get("name", "")
                 price  = outcome.get("price")
                 point  = outcome.get("point")
                 team   = outcome.get("team", "")
-
                 if price is None:
                     continue
-                if name not in ("Over",):
-                    continue
-                if price < PROPS_MAX_ODDS:
-                    continue
 
-                imp = implied_probability_american(price)
-                if imp is None or imp * 100 < PROPS_MIN_PROB:
-                    continue
+                key = (player, mkey, point)
+                by_key.setdefault(key, {}).setdefault(book, {})[name] = price
+                if key not in meta:
+                    meta[key] = {"player": player, "market": mkey, "point": point, "team": team}
+                elif not meta[key].get("team") and team:
+                    meta[key]["team"] = team
 
-                team_key = team or player[:10]
-                if teams_count.get(team_key, 0) >= PROPS_PER_TEAM:
-                    continue
+    props = []
+    teams_count: dict[str, int] = {}
 
-                prob = round(clamp(imp * 100, *PROB_CLAMP), 1)
-                dec  = american_to_decimal(price)
-                ev   = round(clamp(calculate_ev(imp, dec) * 100, *EV_CLAMP), 1) if dec else None
+    for key, books in by_key.items():
+        _player, mkey, point = key
+        m = meta[key]
+        player = m["player"]
+        team   = m.get("team", "")
 
-                props.append({
-                    "mode":         "props",
-                    "sport":        sport_label,
-                    "market":       mkey.replace("_", " ").title(),
-                    "short_market": "PROP",
-                    "player":       player,
-                    "selection":    f"{player} {name} {point}",
-                    "team":         team,
-                    "probability":  prob,
-                    "odds":         int(price),
-                    "decimal_odds": dec,
-                    "bookmaker":    book,
-                    "ev":           ev,
-                    "point":        point,
-                    "color":        "green" if prob >= 65 else "blue",
-                    "label":        "🎯 PROP SÓLIDO" if prob >= 65 else "📌 PROP PROBABLE",
-                    "stake":        "0.25u",
-                })
-                teams_count[team_key] = teams_count.get(team_key, 0) + 1
+        # Probabilidad justa (no-vig) promediada entre libros con ambos lados Over/Under
+        fair_values = []
+        for sides in books.values():
+            over_price  = sides.get("Over")
+            under_price = sides.get("Under")
+            if over_price is None or under_price is None:
+                continue
+            imp_over  = implied_probability_american(over_price)
+            imp_under = implied_probability_american(under_price)
+            if imp_over is None or imp_under is None:
+                continue
+            total = imp_over + imp_under
+            if total <= 0:
+                continue
+            fair_values.append(imp_over / total)
+
+        if not fair_values:
+            continue
+
+        fair_over = clamp(sum(fair_values) / len(fair_values), 0.01, 0.99)
+
+        # Mejor precio "Over" dentro de la tolerancia frente a la prob. justa
+        cand = []
+        for book, sides in books.items():
+            price = sides.get("Over")
+            if price is None:
+                continue
+            imp = implied_probability_american(price)
+            dec = american_to_decimal(price)
+            if imp is None or dec is None:
+                continue
+            cand.append({
+                "bookmaker":    book,
+                "price":        price,
+                "decimal_odds": dec,
+                "diff":         abs(imp - fair_over),
+            })
+        if not cand:
+            continue
+
+        sane = [c for c in cand if c["diff"] <= MAX_ODDS_DIFF_PCT]
+        chosen = (sorted(sane, key=lambda c: c["decimal_odds"], reverse=True)[0] if sane
+                  else sorted(cand, key=lambda c: c["diff"])[0])
+
+        price = chosen["price"]
+        dec   = chosen["decimal_odds"]
+        book  = chosen["bookmaker"]
+
+        if price < PROPS_MAX_ODDS:
+            continue
+        if fair_over * 100 < PROPS_MIN_PROB:
+            continue
+
+        team_key = team or player[:10]
+        if teams_count.get(team_key, 0) >= PROPS_PER_TEAM:
+            continue
+
+        prob = round(clamp(fair_over * 100, *PROB_CLAMP), 1)
+        ev   = round(clamp(calculate_ev(fair_over, dec) * 100, *EV_CLAMP), 1)
+
+        props.append({
+            "mode":         "props",
+            "sport":        sport_label,
+            "market":       mkey.replace("_", " ").title(),
+            "short_market": "PROP",
+            "player":       player,
+            "selection":    f"{player} Over {point}",
+            "team":         team,
+            "probability":  prob,
+            "odds":         int(price),
+            "decimal_odds": dec,
+            "bookmaker":    book,
+            "ev":           ev,
+            "point":        point,
+            "color":        "green" if prob >= 65 else "blue",
+            "label":        "🎯 PROP SÓLIDO" if prob >= 65 else "📌 PROP PROBABLE",
+            "stake":        "0.25u",
+        })
+        teams_count[team_key] = teams_count.get(team_key, 0) + 1
 
     seen: set = set()
     unique = []
