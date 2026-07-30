@@ -1,7 +1,7 @@
 """
 ev_engine_v8.5.py
 - MLB/NBA/NHL: modo EFICIENCIA - favoritos sólidos, difícil perder
-- v8.5: Player Props, fallback ML→Spread/Total, umbrales más flexibles
+- v8.5: fallback ML→Spread/Total, umbrales más flexibles
 """
 
 import os
@@ -48,14 +48,6 @@ EFFICIENCY_MIN_VAL    = 63.0   # validación mínima
 EFFICIENCY_MAX_ODDS   = -130   # no más caro que -130 en americano para eficiencia
 
 MAX_ODDS_DIFF_PCT = float(os.getenv("MAX_ODDS_DIFF_PCT", "0.06"))
-
-# Player Props
-PROPS_MARKETS_MLB = "batter_hits,batter_total_bases,batter_rbis"
-PROPS_MARKETS_NBA = "player_points,player_assists,player_rebounds"
-PROPS_MARKETS_NHL = "player_shots_on_goal,player_points"
-PROPS_MIN_PROB    = 60.0
-PROPS_MAX_ODDS    = -110   # no más caro que -110
-PROPS_PER_TEAM    = 2      # máximo 2 props por equipo
 
 EV_CLAMP    = (-25.0, 25.0)
 EDGE_CLAMP  = (-20.0, 20.0)
@@ -476,173 +468,6 @@ def total_signals(game: dict, sport: str) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Player Props
-# ---------------------------------------------------------------------------
-def fetch_player_props(sport_key: str, game_id: str, sport_label: str, force_refresh: bool = False) -> list[dict]:
-    """Obtiene player props para un juego específico."""
-    cache_key = f"props:{game_id}"
-    if not force_refresh:
-        cached = _cache_get(cache_key)
-        if cached:
-            data, _ = cached
-            return data
-
-    if sport_label == "MLB":
-        markets = PROPS_MARKETS_MLB
-    elif sport_label == "NBA":
-        markets = PROPS_MARKETS_NBA
-    elif sport_label == "NHL":
-        markets = PROPS_MARKETS_NHL
-    else:
-        return []
-
-    if not API_KEY:
-        return []
-
-    url = f"https://api.the-odds-api.com/v4/sports/{sport_key}/events/{game_id}/odds"
-    params = {
-        "apiKey":     API_KEY,
-        "regions":    "us",
-        "markets":    markets,
-        "oddsFormat": "american",
-    }
-    try:
-        r = requests.get(url, params=params, timeout=20)
-        if r.status_code != 200:
-            return []
-        data = r.json()
-    except Exception:
-        return []
-
-    # Agrupar por clave (player, market, point) -> bookmaker -> {"Over": price, "Under": price}
-    by_key: dict[tuple, dict[str, dict[str, float]]] = {}
-    meta: dict[tuple, dict] = {}
-
-    for bookmaker in data.get("bookmakers", []):
-        book = bookmaker.get("title", "")
-        for market in bookmaker.get("markets", []):
-            mkey = market.get("key", "")
-            for outcome in market.get("outcomes", []):
-                name = outcome.get("name", "")
-                if name not in ("Over", "Under"):
-                    continue
-                player = outcome.get("description", outcome.get("name", ""))
-                price  = outcome.get("price")
-                point  = outcome.get("point")
-                team   = outcome.get("team", "")
-                if price is None:
-                    continue
-
-                key = (player, mkey, point)
-                by_key.setdefault(key, {}).setdefault(book, {})[name] = price
-                if key not in meta:
-                    meta[key] = {"player": player, "market": mkey, "point": point, "team": team}
-                elif not meta[key].get("team") and team:
-                    meta[key]["team"] = team
-
-    props = []
-    teams_count: dict[str, int] = {}
-
-    for key, books in by_key.items():
-        _player, mkey, point = key
-        m = meta[key]
-        player = m["player"]
-        team   = m.get("team", "")
-
-        # Probabilidad justa (no-vig) promediada entre libros con ambos lados Over/Under
-        fair_values = []
-        for sides in books.values():
-            over_price  = sides.get("Over")
-            under_price = sides.get("Under")
-            if over_price is None or under_price is None:
-                continue
-            imp_over  = implied_probability_american(over_price)
-            imp_under = implied_probability_american(under_price)
-            if imp_over is None or imp_under is None:
-                continue
-            total = imp_over + imp_under
-            if total <= 0:
-                continue
-            fair_values.append(imp_over / total)
-
-        if not fair_values:
-            continue
-
-        fair_over = clamp(sum(fair_values) / len(fair_values), 0.01, 0.99)
-
-        # Mejor precio "Over" dentro de la tolerancia frente a la prob. justa
-        cand = []
-        for book, sides in books.items():
-            price = sides.get("Over")
-            if price is None:
-                continue
-            imp = implied_probability_american(price)
-            dec = american_to_decimal(price)
-            if imp is None or dec is None:
-                continue
-            cand.append({
-                "bookmaker":    book,
-                "price":        price,
-                "decimal_odds": dec,
-                "diff":         abs(imp - fair_over),
-            })
-        if not cand:
-            continue
-
-        sane = [c for c in cand if c["diff"] <= MAX_ODDS_DIFF_PCT]
-        chosen = (sorted(sane, key=lambda c: c["decimal_odds"], reverse=True)[0] if sane
-                  else sorted(cand, key=lambda c: c["diff"])[0])
-
-        price = chosen["price"]
-        dec   = chosen["decimal_odds"]
-        book  = chosen["bookmaker"]
-
-        if price < PROPS_MAX_ODDS:
-            continue
-        if fair_over * 100 < PROPS_MIN_PROB:
-            continue
-
-        team_key = team or player[:10]
-        if teams_count.get(team_key, 0) >= PROPS_PER_TEAM:
-            continue
-
-        prob = round(clamp(fair_over * 100, *PROB_CLAMP), 1)
-        ev   = round(clamp(calculate_ev(fair_over, dec) * 100, *EV_CLAMP), 1)
-
-        props.append({
-            "mode":         "props",
-            "sport":        sport_label,
-            "market":       mkey.replace("_", " ").title(),
-            "short_market": "PROP",
-            "player":       player,
-            "selection":    f"{player} Over {point}",
-            "team":         team,
-            "probability":  prob,
-            "odds":         int(price),
-            "decimal_odds": dec,
-            "bookmaker":    book,
-            "ev":           ev,
-            "point":        point,
-            "color":        "green" if prob >= 65 else "blue",
-            "label":        "🎯 PROP SÓLIDO" if prob >= 65 else "📌 PROP PROBABLE",
-            "stake":        "0.25u",
-        })
-        teams_count[team_key] = teams_count.get(team_key, 0) + 1
-
-    seen: set = set()
-    unique = []
-    for p in sorted(props, key=lambda x: x["probability"], reverse=True):
-        k = (p["player"], p["market"])
-        if k not in seen:
-            seen.add(k)
-            unique.append(p)
-
-    result = unique[:20]
-    _cache_set(cache_key, result)
-    return result
-
-
-# ---------------------------------------------------------------------------
 # Predicción completa por juego (v8.5)
 # ---------------------------------------------------------------------------
 def best_market(ml: Optional[dict], spread: Optional[dict], total: Optional[dict]) -> Optional[dict]:
@@ -759,7 +584,6 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
         "sports":           {},
         "games":            [],
         "all_games":        [],
-        "all_props":        [],
 
         # Eficiencia (MLB/NBA/NHL)
         "efficiency_green": [],
@@ -789,14 +613,6 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
             }
             for g in games:
                 full = game_prediction_full(g, label)
-                # Fetch player props para este juego
-                game_id = g.get("id", "")
-                if game_id:
-                    props = fetch_player_props(key, game_id, label, force_refresh=force_refresh)
-                    full["props"] = props
-                    dash["all_props"].extend(props)
-                else:
-                    full["props"] = []
                 dash["all_games"].append(full)
                 # Fallback: si ML no es green/blue, buscar mejor jugada en Spread o Total
                 bb = full["ml"][0] if full["ml"] else None
@@ -889,22 +705,6 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
         dash["ticket_efficiency"],
         dash["ticket_3"], dash["ticket_6"], dash["ticket_10"],
     ] if t and t.get("picks_count", 0) >= 3]
-
-    # Ordenar props
-    dash["all_props"] = sorted(
-        dash.get("all_props", []),
-        key=lambda x: x.get("probability", 0),
-        reverse=True,
-    )[:30]
-
-    # Agrupar props por partido
-    props_by_game: dict = {}
-    for prop in dash["all_props"]:
-        game_key = prop.get("game", "Unknown")
-        if game_key not in props_by_game:
-            props_by_game[game_key] = []
-        props_by_game[game_key].append(prop)
-    dash["props_by_game"] = props_by_game
 
     return dash
 

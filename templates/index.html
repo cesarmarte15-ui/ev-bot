@@ -233,16 +233,6 @@
   .prob-fd-line{font-family:'Courier New',monospace;font-size:11px;color:#38bdf8;text-align:right}
   .prob-badges{display:flex;gap:6px;align-items:center}
 
-  /* PROPS */
-  .props-game-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);
-    padding:16px;margin-bottom:12px}
-  .props-game-header{display:flex;justify-content:space-between;align-items:center;
-    margin-bottom:12px;gap:8px;flex-wrap:wrap}
-  .props-game-name{font-size:13px;font-weight:600;margin-left:8px}
-  .props-picks{display:flex;flex-direction:column;gap:10px}
-  .props-pick-row{display:flex;align-items:center;gap:12px;background:var(--bg3);
-    border-radius:7px;padding:10px 12px}
-
   /* SPORTS TABLE */
   .sports-table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:24px}
   .sports-table th{text-align:left;padding:10px 14px;color:var(--muted);font-weight:600;
@@ -300,7 +290,6 @@
   <button class="tab" onclick="showTab('efficiency')" id="tab-efficiency">🔒 Eficiencia</button>
   <button class="tab" onclick="showTab('highprob')"   id="tab-highprob">⭐ Alta Prob</button>
   <button class="tab" onclick="showTab('tickets')"    id="tab-tickets">🎟 Tickets</button>
-  <button class="tab" onclick="showTab('props')"      id="tab-props">🎯 Props</button>
   <button class="tab" onclick="showTab('debug')"      id="tab-debug">🛠 Debug</button>
 </div>
 
@@ -365,16 +354,6 @@
     <div id="tickets-container"></div>
   </div>
 
-  <!-- PROPS -->
-  <div class="tab-content" id="content-props">
-    <div class="section-header">
-      <span class="section-title">🎯 Player Props — Over seleccionados</span>
-      <span class="section-count" id="props-count">0</span>
-    </div>
-    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">MLB · NBA · NHL — Props con ≥60% de probabilidad implícita. Máx. 2 por equipo. Solo Overs.</p>
-    <div class="prob-list" id="props-list"></div>
-  </div>
-
   <!-- DEBUG -->
   <div class="tab-content" id="content-debug">
     <div class="section-header"><span class="section-title">🛠 Estado de Ligas</span></div>
@@ -423,7 +402,7 @@ function setStatus(state, data) {
 
 function showLoading() {
   ['top-picks-container','all-games-list','efficiency-green-grid','efficiency-blue-grid',
-   'avoid-grid','highprob-list','props-list',
+   'avoid-grid','highprob-list',
    'parlays-container','tickets-container','debug-container'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.innerHTML = `<div class="loading-overlay"><div class="loading-spinner"></div> Cargando...</div>`;
@@ -441,7 +420,6 @@ function renderAll(data) {
   renderHighProb(data);
   renderParlays(data);
   renderTickets(data);
-  renderProps(data);
   renderDebug(data);
 }
 
@@ -832,66 +810,6 @@ function renderHighProb(data) {
           <div class="prob-fd-line">${fdLine}</div>
           <button class="btn-copy" data-pick="${escAttr(fdLine)}" onclick="copyPick(this,this.dataset.pick)">Copiar</button>
         </div>
-      </div>`;
-  }).join('');
-}
-
-// ── PROPS ─────────────────────────────────────────────────
-function renderProps(data) {
-  const props  = data.all_props    || [];
-  const byGame = data.props_by_game || {};
-  const list   = document.getElementById('props-list');
-  const ct     = document.getElementById('props-count');
-  if (ct) ct.textContent = props.length;
-
-  if (!props.length) {
-    list.innerHTML = `<div class="empty-state"><div class="empty-icon">🎯</div><div class="empty-msg">Sin props disponibles hoy — la API no tiene mercados activos para estos juegos.</div></div>`;
-    return;
-  }
-
-  list.innerHTML = Object.entries(byGame).map(([gameName, gameProps]) => {
-    const sport = gameProps[0]?.sport || '';
-
-    const propRows = gameProps.map(p => {
-      const prob     = p.probability || 0;
-      const tier     = prob >= 65 ? 'tier-a' : 'tier-b';
-      const probStr  = prob.toFixed(1) + '%';
-      const oddsRaw  = p.odds;
-      const oddsStr  = fmtOdds(oddsRaw) || '--';
-      const oc       = oddsRaw > 0 ? 'odds-pos' : 'odds-neg';
-      const ev       = p.ev != null ? (p.ev > 0 ? '+' : '') + p.ev.toFixed(1) + '%' : '';
-      const pickLine = `${p.selection || ''} · ${oddsStr}`;
-      const teamTag  = p.team ? `<span class="card-sport">${p.team}</span>` : '';
-      return `
-        <div class="props-pick-row">
-          <div class="prob-circle ${tier}" style="width:44px;height:44px;font-size:11px;flex-shrink:0">${probStr}</div>
-          <div style="flex:1;min-width:0">
-            <div style="font-size:13px;font-weight:600;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${p.selection || ''}</div>
-            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-              ${teamTag}
-              <span class="card-sport">${p.market || 'Prop'}</span>
-              <span class="card-label lbl-${p.color || 'blue'}" style="font-size:10px;padding:2px 7px">${p.label || ''}</span>
-              ${ev ? `<span style="font-size:10px;color:var(--muted)">EV ${ev}</span>` : ''}
-            </div>
-          </div>
-          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0">
-            <span class="odds-badge ${oc}">${oddsStr}</span>
-            <span style="font-size:10px;color:var(--muted)">${p.bookmaker || ''}</span>
-            <button class="btn-copy" style="font-size:10px;padding:3px 8px" data-pick="${escAttr(pickLine)}" onclick="copyPick(this,this.dataset.pick)">Copiar</button>
-          </div>
-        </div>`;
-    }).join('');
-
-    return `
-      <div class="props-game-card">
-        <div class="props-game-header">
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            <span class="card-sport">${sport}</span>
-            <span class="props-game-name">${gameName}</span>
-          </div>
-          <span class="section-count">${gameProps.length} prop${gameProps.length !== 1 ? 's' : ''}</span>
-        </div>
-        <div class="props-picks">${propRows}</div>
       </div>`;
   }).join('');
 }

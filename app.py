@@ -80,21 +80,6 @@ def api_clear_cache():
     clear_cache()
     return jsonify({"ok": True, "message": "Cache limpiado"})
 
-@app.route("/api/props")
-def api_props():
-    """Player props MLB/NBA/NHL."""
-    try:
-        selected = request.args.getlist("sports") or ["ALL"]
-        force    = request.args.get("refresh", "0") == "1"
-        data     = get_dashboard(selected, force_refresh=force)
-        return jsonify({
-            "ok":            True,
-            "all_props":     data.get("all_props", []),
-            "props_by_game": data.get("props_by_game", {}),
-        })
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
 @app.route("/health")
 def health():
     return jsonify({"ok": True, "version": "8.6"})
