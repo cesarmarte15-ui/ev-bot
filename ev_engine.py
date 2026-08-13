@@ -502,16 +502,16 @@ def total_signals(game: dict, sport: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 def best_market(ml: list, spread: list, total: list) -> Optional[dict]:
     """
-    Elige el mercado con mejor EV real entre ML/Spread/Total, solo entre
-    picks que ya cumplen el piso de EV de SÓLIDO/PROBABLE (color green/blue).
-    Si ningún mercado del partido cumple ese piso, no hay recomendación
-    (antes caía a candidatos rojos y podía recomendar EV negativo).
+    Elige el mercado con mejor EV real entre ML/Spread/Total, sin filtrar
+    por color: siempre muestra el mejor disponible (aunque sea EVITAR/rojo)
+    para no ocultar el panorama del juego. El color real del pick elegido
+    viaja intacto en el resultado, así la UI lo pinta como corresponde.
     """
     def best_of(signals: list) -> Optional[dict]:
-        good = [s for s in (signals or []) if s.get("color") in ("green", "blue")]
-        if not good:
+        cands = [s for s in (signals or []) if s.get("ev") is not None]
+        if not cands:
             return None
-        return max(good, key=lambda s: s.get("ev") or 0)
+        return max(cands, key=lambda s: s.get("ev") or -999)
 
     candidates = [
         (n, best_of(s)) for n, s in [("Moneyline", ml), ("Spread", spread), ("Total", total)]
@@ -569,10 +569,10 @@ def ticket_ok_efficiency(sig: Optional[dict]) -> bool:
         return False
     return True
 
-def ticket_ok_mega(sig: Optional[dict]) -> bool:
-    if not sig or sig.get("color") not in ("green", "blue"):
-        return False
-    return sig.get("probability", 0) >= 60.0 and sig.get("validation", 0) >= 58
+def ticket_ok_any(sig: Optional[dict]) -> bool:
+    """Sin gate de color/calidad: usado por los parlays 'siempre mostrar
+    todo el mercado por EV' — el color real de cada pick viaja intacto."""
+    return sig is not None
 
 def build_ticket(name: str, pool: list, count: int, ok_fn, color: str, risk: str, reason: str) -> Optional[dict]:
     picks = []
@@ -620,20 +620,19 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
         "only_today":       ONLY_TODAY,
         "timezone":         LOCAL_TZ,
         "sports":           {},
-        "games":            [],
         "all_games":        [],
 
-        # Eficiencia (MLB/NBA/NHL)
+        # Eficiencia (MLB/NBA/NHL) — TODAS las señales del día (ML/Spread/
+        # Total, todos los partidos), coloreadas según su clasificación real
+        # (classify_efficiency decide el color, no la visibilidad). Estas
+        # listas nunca se filtran ni se vacían por "no hay SÓLIDO/PROBABLE
+        # suficiente": siempre muestran el mercado completo, por EV.
         "efficiency_green": [],
         "efficiency_blue":  [],
-
-        # Picks a evitar
         "avoid": [],
 
         # Tickets
         "ticket_efficiency": None,
-        "parlay_no_solido":  False,
-        "parlay_mltotal_no_solido": False,
 
         "warnings": [],
     }
@@ -651,118 +650,58 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
                 "from_cache": from_cache, "cache_seconds_left": ttl,
             }
             for g in games:
-                full = game_prediction_full(g, label)
-                dash["all_games"].append(full)
-                # Fallback: si ML no es green/blue, buscar mejor jugada en Spread o Total
-                bb = full["ml"][0] if full["ml"] else None
-                bb_spread = full["spread"][0] if full["spread"] else None
-                bb_total  = full["total"][0]  if full["total"]  else None
-
-                if not bb or bb.get("color") == "red":
-                    alternatives = [s for s in [bb_spread, bb_total] if s and s.get("color") in ("green", "blue")]
-                    if alternatives:
-                        best_alt = sorted(alternatives, key=lambda x: (x.get("validation", 0), x.get("ev") or 0), reverse=True)[0]
-                        best_alt["fallback_from_ml"] = True
-                        best_alt["label"] = best_alt.get("label", "") + " (Alt)"
-                        bb = best_alt
-                    elif bb and bb.get("color") == "red":
-                        if bb.get("probability", 0) >= 55:
-                            bb = {**bb, "color": "yellow", "label": "🔶 ESPECULATIVO",
-                                  "reason": "ML sin valor claro — apuesta pequeña si acaso.", "stake": "0.1u"}
-                        else:
-                            bb = None
-                pred = {
-                    "sport": label, "game": full["game"],
-                    "home_team": full["home_team"], "away_team": full["away_team"],
-                    "start_time": full["start_time"],
-                    "best_bet": bb, "signals": full["ml"], "mode": "efficiency",
-                }
-                dash["games"].append(pred)
-                if bb:
-                    entry = {**bb, "game": full["game"], "start_time": full["start_time"]}
-                    if bb.get("color") == "green":
-                        dash["efficiency_green"].append(entry)
-                    elif bb.get("color") == "blue":
-                        dash["efficiency_blue"].append(entry)
-                for mkey in ("ml", "spread", "total"):
-                    for sig in full.get(mkey, []):
-                        if sig.get("color") == "red":
-                            dash["avoid"].append({**sig, "game": full["game"], "start_time": full["start_time"]})
+                dash["all_games"].append(game_prediction_full(g, label))
         except Exception as e:
             logger.error("Error %s: %s", label, e, exc_info=True)
             dash["sports"][label] = {"ok": False, "sport_key": key, "error": str(e)}
             dash["warnings"].append(f"{label}: {e}")
 
-    # Ordenar y limitar
-    sorter_eff = lambda x: (x.get("validation", 0), x.get("probability", 0))
+    sorter_ev = lambda x: x.get("ev") if x.get("ev") is not None else -999
 
-    dash["efficiency_green"] = dedupe(sorted(dash["efficiency_green"], key=sorter_eff, reverse=True))[:10]
-    dash["efficiency_blue"]  = dedupe(sorted(dash["efficiency_blue"],  key=sorter_eff, reverse=True))[:10]
+    # Todas las señales del día en un solo pool — base de Eficiencia, Alta
+    # Prob y Parlays. No se colapsa a "1 mejor pick por juego": cada
+    # mercado de cada partido aparece con su color real.
+    all_signals = []
+    for full in dash["all_games"]:
+        for mkey in ("ml", "spread", "total"):
+            for sig in full.get(mkey, []):
+                all_signals.append({**sig, "game": full["game"], "start_time": full["start_time"]})
+    all_signals = dedupe(all_signals)
 
-    # Ticket Eficiencia
+    dash["efficiency_green"] = sorted([s for s in all_signals if s.get("color") == "green"], key=sorter_ev, reverse=True)
+    dash["efficiency_blue"]  = sorted([s for s in all_signals if s.get("color") == "blue"],  key=sorter_ev, reverse=True)
+    dash["avoid"]            = sorted([s for s in all_signals if s.get("color") == "red"],   key=sorter_ev, reverse=True)
+
+    # Ticket Eficiencia: producto curado (requiere green/blue), queda
+    # deshabilitado en la UI (display:none) pero se mantiene funcional.
     eff_pool = dedupe(dash["efficiency_green"] + dash["efficiency_blue"])
-    eff_pool.sort(key=sorter_eff, reverse=True)
     dash["ticket_efficiency"] = build_ticket(
         "🔒 Ticket Eficiencia", eff_pool, 6, ticket_ok_efficiency,
         "green", "Bajo", "Picks de alta probabilidad en MLB/NBA/NHL."
     )
 
-    # Parlay Mixto (3/6/10 legs, seleccionable) — ML + Spread + Total
-    # Requiere al menos 1 pick SÓLIDO (green) para armar parlays
-    _parlay_pool = []
-    for _g in dash["all_games"]:
-        for _mkey in ("ml", "spread", "total"):
-            for _sig in _g.get(_mkey, []):
-                if _sig.get("color") in ("green", "blue"):
-                    _parlay_pool.append({**_sig, "game": _g["game"], "start_time": _g["start_time"]})
-    _parlay_pool = dedupe(_parlay_pool)
-    _parlay_pool.sort(key=lambda x: x.get("probability", 0), reverse=True)
+    # Parlay Mixto (3/6/10 legs) — ML + Spread + Total, top EV real del día
+    # sin filtrar por color. Solo devuelve None si literalmente no hay 3
+    # juegos distintos con datos hoy (build_ticket ya lo garantiza).
+    _parlay_pool = sorted(all_signals, key=sorter_ev, reverse=True)
+    dash["ticket_3"]  = build_ticket("🎯 Parlay Mixto — 3 Legs",  _parlay_pool, 3,  ticket_ok_any, "yellow", "Bajo",  "3 mejores picks del día por EV (ML/Spread/Total).")
+    dash["ticket_6"]  = build_ticket("🔥 Parlay Mixto — 6 Legs",  _parlay_pool, 6,  ticket_ok_any, "yellow", "Medio", "6 mejores picks del día por EV (ML/Spread/Total).")
+    dash["ticket_10"] = build_ticket("⭐ Parlay Mixto — 10 Legs", _parlay_pool, 10, ticket_ok_any, "yellow", "Alto",  "10 mejores picks del día por EV (ML/Spread/Total).")
 
-    if any(s.get("color") == "green" for s in _parlay_pool):
-        dash["ticket_3"]  = build_ticket("🎯 Parlay Mixto — 3 Legs",  _parlay_pool, 3,  ticket_ok_efficiency, "green", "Bajo",  "3 mejores picks del día (ML/Spread/Total).")
-        dash["ticket_6"]  = build_ticket("🔥 Parlay Mixto — 6 Legs",  _parlay_pool, 6,  ticket_ok_efficiency, "blue",  "Medio", "6 mejores picks del día (ML/Spread/Total).")
-        dash["ticket_10"] = build_ticket("⭐ Parlay Mixto — 10 Legs", _parlay_pool, 10, ticket_ok_mega,        "gold",  "Alto",  "10 mejores picks del día (ML/Spread/Total).")
-    else:
-        dash["ticket_3"] = dash["ticket_6"] = dash["ticket_10"] = None
-        dash["parlay_no_solido"] = True
+    # Parlay ML + Total (3/6/10 legs) — excluye Spread, mismo criterio.
+    _parlay_pool_mltotal = sorted(
+        [s for s in all_signals if s.get("market") != "Spread"], key=sorter_ev, reverse=True
+    )
+    dash["ticket_mltotal_3"]  = build_ticket("🎯 Parlay ML+Total — 3 Legs",  _parlay_pool_mltotal, 3,  ticket_ok_any, "yellow", "Bajo",  "3 mejores picks del día por EV (ML/Total).")
+    dash["ticket_mltotal_6"]  = build_ticket("🔥 Parlay ML+Total — 6 Legs",  _parlay_pool_mltotal, 6,  ticket_ok_any, "yellow", "Medio", "6 mejores picks del día por EV (ML/Total).")
+    dash["ticket_mltotal_10"] = build_ticket("⭐ Parlay ML+Total — 10 Legs", _parlay_pool_mltotal, 10, ticket_ok_any, "yellow", "Alto",  "10 mejores picks del día por EV (ML/Total).")
 
-    # Parlay ML + Total (3/6/10 legs, seleccionable) — excluye Spread
-    _parlay_pool_mltotal = []
-    for _g in dash["all_games"]:
-        for _mkey in ("ml", "total"):
-            for _sig in _g.get(_mkey, []):
-                if _sig.get("color") in ("green", "blue"):
-                    _parlay_pool_mltotal.append({**_sig, "game": _g["game"], "start_time": _g["start_time"]})
-    _parlay_pool_mltotal = dedupe(_parlay_pool_mltotal)
-    _parlay_pool_mltotal.sort(key=lambda x: x.get("probability", 0), reverse=True)
-
-    if any(s.get("color") == "green" for s in _parlay_pool_mltotal):
-        dash["ticket_mltotal_3"]  = build_ticket("🎯 Parlay ML+Total — 3 Legs",  _parlay_pool_mltotal, 3,  ticket_ok_efficiency, "green", "Bajo",  "3 mejores picks del día (ML/Total).")
-        dash["ticket_mltotal_6"]  = build_ticket("🔥 Parlay ML+Total — 6 Legs",  _parlay_pool_mltotal, 6,  ticket_ok_efficiency, "blue",  "Medio", "6 mejores picks del día (ML/Total).")
-        dash["ticket_mltotal_10"] = build_ticket("⭐ Parlay ML+Total — 10 Legs", _parlay_pool_mltotal, 10, ticket_ok_mega,        "gold",  "Alto",  "10 mejores picks del día (ML/Total).")
-    else:
-        dash["ticket_mltotal_3"] = dash["ticket_mltotal_6"] = dash["ticket_mltotal_10"] = None
-        dash["parlay_mltotal_no_solido"] = True
-
-    # Deduplicar avoid
-    dash["avoid"] = dedupe(dash["avoid"])
-
-    # Picks de alta probabilidad (≥65%)
-    all_eff = dedupe(dash["efficiency_green"] + dash["efficiency_blue"])
-    dash["high_prob"] = sorted(
-        [p for p in all_eff if p.get("probability", 0) >= 65.0],
-        key=lambda x: x.get("probability", 0),
-        reverse=True,
-    )[:20]
-
-    dash["green"]   = dash["efficiency_green"]
-    dash["blue"]    = dash["efficiency_blue"]
-    dash["red"]     = []
-    dash["tickets"] = [t for t in [
-        dash["ticket_efficiency"],
-        dash["ticket_3"], dash["ticket_6"], dash["ticket_10"],
-        dash["ticket_mltotal_3"], dash["ticket_mltotal_6"], dash["ticket_mltotal_10"],
-    ] if t and t.get("picks_count", 0) >= 3]
+    # Alta Prob: prioriza ≥65% (su propósito); si nada llega hoy, muestra
+    # igual el día completo ordenado por probabilidad descendente en vez
+    # de vaciar la pestaña.
+    by_prob = sorted(all_signals, key=lambda x: x.get("probability") or 0, reverse=True)
+    high_prob_65 = [p for p in by_prob if (p.get("probability") or 0) >= 65.0]
+    dash["high_prob"] = (high_prob_65 or by_prob)[:20]
 
     return dash
 

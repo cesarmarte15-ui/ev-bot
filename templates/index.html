@@ -492,14 +492,7 @@ function warningsBanner(warnings) {
     </div>`;
 }
 
-function parlaySummaryCard(title, data, prefix, noSolidoFlag) {
-  if (data[noSolidoFlag]) {
-    return `
-      <div class="parlay-summary-card">
-        <div class="parlay-summary-title">🎯 ${title}</div>
-        <div style="font-size:12px;color:var(--muted)">Sin jugadas sólidas suficientes hoy.</div>
-      </div>`;
-  }
+function parlaySummaryCard(title, data, prefix) {
   const rows = [3, 6, 10].map(n => {
     const t = data[prefix + n];
     if (!t) return '';
@@ -523,15 +516,14 @@ function renderDashboard(data) {
   const topEv = allG
     .map((g, idx) => ({ g, idx }))
     .filter(x => x.g.best_market)
-    .sort((a, b) => (b.g.best_market.ev || 0) - (a.g.best_market.ev || 0))
-    .slice(0, 8);
+    .sort((a, b) => (b.g.best_market.ev ?? -999) - (a.g.best_market.ev ?? -999))
+    .slice(0, 20);
 
-  const noParlays = data.parlay_no_solido && data.parlay_mltotal_no_solido;
   const hasWarnings = data.warnings && data.warnings.length;
 
-  if (!topEv.length && noParlays && !hasWarnings) {
+  if (!allG.length && !hasWarnings) {
     document.getElementById('top-picks-container').innerHTML =
-      `<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-msg">No hay picks disponibles hoy. Intenta más tarde.</div></div>`;
+      `<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-msg">No hay juegos disponibles hoy. Intenta más tarde.</div></div>`;
     return;
   }
 
@@ -545,8 +537,8 @@ function renderDashboard(data) {
 
   html += `<div class="section-header" style="margin-top:32px"><span class="section-title">🎟 Parlays Disponibles</span></div>`;
   html += `<div class="cards-grid">
-    ${parlaySummaryCard('Parlay Mixto',      data, 'ticket_',         'parlay_no_solido')}
-    ${parlaySummaryCard('Parlay ML + Total', data, 'ticket_mltotal_', 'parlay_mltotal_no_solido')}
+    ${parlaySummaryCard('Parlay Mixto',      data, 'ticket_')}
+    ${parlaySummaryCard('Parlay ML + Total', data, 'ticket_mltotal_')}
   </div>`;
 
   document.getElementById('top-picks-container').innerHTML = html;
@@ -760,10 +752,10 @@ function renderGrid(containerId, picks, countId) {
 
 // ── AVOID ─────────────────────────────────────────────────
 function renderAvoid(data) {
-  const avoid = (data.avoid || []).slice(0, 12);
+  const avoid = data.avoid || [];
   const el    = document.getElementById('avoid-grid');
   const ct    = document.getElementById('avoid-count');
-  if (ct) ct.textContent = (data.avoid||[]).length;
+  if (ct) ct.textContent = avoid.length;
   el.innerHTML = avoid.length
     ? avoid.map(renderCard).join('')
     : `<div class="empty-state"><div class="empty-icon">✅</div><div class="empty-msg">Sin picks a evitar identificados hoy.</div></div>`;
@@ -785,10 +777,6 @@ function selectParlayLegs(section, legs) {
 
 function renderParlays(data) {
   const container = document.getElementById('parlays-container');
-  if (data.parlay_no_solido) {
-    container.innerHTML = `<div class="empty-state"><div class="empty-icon">🔒</div><div class="empty-msg">No hay jugadas sólidas suficientes hoy</div></div>`;
-    return;
-  }
   const legs = parlayLegs.mixto;
   const t = data['ticket_' + legs];
   container.innerHTML = t
@@ -798,10 +786,6 @@ function renderParlays(data) {
 
 function renderParlaysMlTotal(data) {
   const container = document.getElementById('parlays-mltotal-container');
-  if (data.parlay_mltotal_no_solido) {
-    container.innerHTML = `<div class="empty-state"><div class="empty-icon">🔒</div><div class="empty-msg">No hay jugadas sólidas suficientes hoy</div></div>`;
-    return;
-  }
   const legs = parlayLegs.mltotal;
   const t = data['ticket_mltotal_' + legs];
   container.innerHTML = t
@@ -854,7 +838,7 @@ function renderTicketCard(t, extraClass) {
       </div>`;
   }).join('');
 
-  const bc          = t.color==='gold'?'gold':t.color==='blue'?'blue':'green';
+  const bc          = ['gold','blue','yellow','red'].includes(t.color) ? t.color : 'green';
   const uid         = 'cp-' + Math.random().toString(36).slice(2,8);
   const borderColor = picksBorderColor(tPicks);
   return `
