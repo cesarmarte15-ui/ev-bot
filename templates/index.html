@@ -59,6 +59,22 @@
   .section-count{background:var(--bg3);color:var(--muted);font-size:11px;padding:2px 8px;border-radius:20px}
   .section-divider{height:1px;background:var(--border);margin:28px 0 20px}
 
+  /* PARLAY LEG SELECTOR */
+  .parlay-selector{display:flex;gap:6px;margin-bottom:16px}
+  .parlay-opt{padding:6px 14px;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer;
+    border:1px solid var(--border);color:var(--muted);background:transparent;transition:all .15s}
+  .parlay-opt.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+  .parlay-opt:hover:not(.active){color:var(--text)}
+
+  /* DASHBOARD SUMMARY */
+  .warnings-banner{display:flex;gap:10px;background:var(--red-dim);border:1px solid var(--red);
+    border-radius:var(--radius);padding:12px 14px;margin-bottom:20px}
+  .parlay-summary-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px}
+  .parlay-summary-title{font-size:14px;font-weight:700;margin-bottom:10px}
+  .parlay-summary-row{display:flex;justify-content:space-between;font-size:12px;padding:7px 0;
+    border-bottom:1px solid var(--border);color:var(--muted)}
+  .parlay-summary-row:last-child{border-bottom:none}
+
   /* CARDS */
   .cards-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;margin-bottom:8px}
   .card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);
@@ -346,12 +362,30 @@
 
   <!-- TICKETS -->
   <div class="tab-content" id="content-tickets">
-    <div class="section-header"><span class="section-title">🎟 Parlays del Día</span></div>
-    <p style="font-size:12px;color:var(--muted);margin-bottom:20px">Picks de los 3 mercados (ML · Spread · Total) ordenados por probabilidad.</p>
+    <div class="section-header"><span class="section-title">🎯 Parlay Mixto</span></div>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Picks de los 3 mercados (ML · Spread · Total) ordenados por EV.</p>
+    <div class="parlay-selector" id="parlay-mixto-selector">
+      <button class="parlay-opt active" data-legs="3"  onclick="selectParlayLegs('mixto',3)">3 patas</button>
+      <button class="parlay-opt"        data-legs="6"  onclick="selectParlayLegs('mixto',6)">6 patas</button>
+      <button class="parlay-opt"        data-legs="10" onclick="selectParlayLegs('mixto',10)">10 patas</button>
+    </div>
     <div id="parlays-container"></div>
+
     <div class="section-divider"></div>
-    <div class="section-header" style="margin-top:0"><span class="section-title">🎫 Tickets Especializados</span></div>
-    <div id="tickets-container"></div>
+
+    <div class="section-header" style="margin-top:0"><span class="section-title">🎯 Parlay ML + Total</span></div>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Solo Moneyline y Total (sin Spread), ordenados por EV.</p>
+    <div class="parlay-selector" id="parlay-mltotal-selector">
+      <button class="parlay-opt active" data-legs="3"  onclick="selectParlayLegs('mltotal',3)">3 patas</button>
+      <button class="parlay-opt"        data-legs="6"  onclick="selectParlayLegs('mltotal',6)">6 patas</button>
+      <button class="parlay-opt"        data-legs="10" onclick="selectParlayLegs('mltotal',10)">10 patas</button>
+    </div>
+    <div id="parlays-mltotal-container"></div>
+
+    <!-- Ticket Eficiencia: deshabilitado a pedido, se deja el código para poder revertir -->
+    <div class="section-divider" style="display:none"></div>
+    <div class="section-header" style="margin-top:0;display:none"><span class="section-title">🎫 Tickets Especializados</span></div>
+    <div id="tickets-container" style="display:none"></div>
   </div>
 
   <!-- DEBUG -->
@@ -403,7 +437,7 @@ function setStatus(state, data) {
 function showLoading() {
   ['top-picks-container','all-games-list','efficiency-green-grid','efficiency-blue-grid',
    'avoid-grid','highprob-list',
-   'parlays-container','tickets-container','debug-container'].forEach(id => {
+   'parlays-container','parlays-mltotal-container','tickets-container','debug-container'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.innerHTML = `<div class="loading-overlay"><div class="loading-spinner"></div> Cargando...</div>`;
   });
@@ -419,6 +453,7 @@ function renderAll(data) {
   renderAvoid(data);
   renderHighProb(data);
   renderParlays(data);
+  renderParlaysMlTotal(data);
   renderTickets(data);
   renderDebug(data);
 }
@@ -438,24 +473,80 @@ function renderCacheInfo(data) {
     </div>`;
 }
 
-// ── DASHBOARD ─────────────────────────────────────────────
-function renderDashboard(data) {
-  const green = data.efficiency_green || [];
-  const allG  = data.all_games || [];
-  let html = '';
+// ── DASHBOARD (resumen ejecutivo) ────────────────────────
+// A diferencia de "Todos los Juegos" (listado completo) y "Eficiencia"
+// (filtro por clasificación), el Dashboard no repite esas listas: muestra
+// solo el mejor EV cruzando los 3 mercados por partido, un resumen de los
+// parlays disponibles, y warnings — contenido que no está en ninguna otra
+// pestaña.
+function warningsBanner(warnings) {
+  if (!warnings || !warnings.length) return '';
+  return `
+    <div class="warnings-banner">
+      <span style="font-size:16px;flex-shrink:0">⚠️</span>
+      <div>
+        <div style="font-weight:700;font-size:12px;margin-bottom:4px">Avisos</div>
+        ${warnings.map(w => `<div style="font-size:12px;opacity:.9">${w}</div>`).join('')}
+      </div>
+    </div>`;
+}
 
-  if (green.length) {
-    html += `<div class="section-header"><span class="section-title">🔒 Top Eficiencia</span><span class="section-count">${green.length}</span></div>`;
-    html += `<div class="cards-grid">${green.slice(0,6).map(renderCard).join('')}</div>`;
+function parlaySummaryCard(title, data, prefix, noSolidoFlag) {
+  if (data[noSolidoFlag]) {
+    return `
+      <div class="parlay-summary-card">
+        <div class="parlay-summary-title">🎯 ${title}</div>
+        <div style="font-size:12px;color:var(--muted)">Sin jugadas sólidas suficientes hoy.</div>
+      </div>`;
   }
-  if (allG.length) {
-    html += `<div class="section-header" style="margin-top:28px"><span class="section-title">📋 Juegos de Hoy</span><span class="section-count">${allG.length}</span></div>`;
-    html += `<div class="game-list">${allG.slice(0,8).map((g,i) => renderGameRow(g,i)).join('')}</div>`;
-    if (allG.length > 8)
-      html += `<p style="font-size:12px;color:var(--muted);text-align:center;margin-top:10px;cursor:pointer" onclick="showTab('todos')">Ver todos los juegos →</p>`;
+  const rows = [3, 6, 10].map(n => {
+    const t = data[prefix + n];
+    if (!t) return '';
+    return `
+      <div class="parlay-summary-row">
+        <span>${n} patas · ${t.picks_count} picks</span>
+        <span>Prob ${t.combined_probability != null ? t.combined_probability.toFixed(1) : '--'}%</span>
+      </div>`;
+  }).join('');
+  return `
+    <div class="parlay-summary-card">
+      <div class="parlay-summary-title">🎯 ${title}</div>
+      ${rows || '<div style="font-size:12px;color:var(--muted)">Sin datos suficientes hoy.</div>'}
+      <button class="btn btn-outline" style="margin-top:12px;width:100%" onclick="showTab('tickets')">Ver parlays →</button>
+    </div>`;
+}
+
+function renderDashboard(data) {
+  const allG = data.all_games || [];
+
+  const topEv = allG
+    .map((g, idx) => ({ g, idx }))
+    .filter(x => x.g.best_market)
+    .sort((a, b) => (b.g.best_market.ev || 0) - (a.g.best_market.ev || 0))
+    .slice(0, 8);
+
+  const noParlays = data.parlay_no_solido && data.parlay_mltotal_no_solido;
+  const hasWarnings = data.warnings && data.warnings.length;
+
+  if (!topEv.length && noParlays && !hasWarnings) {
+    document.getElementById('top-picks-container').innerHTML =
+      `<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-msg">No hay picks disponibles hoy. Intenta más tarde.</div></div>`;
+    return;
   }
-  if (!green.length && !allG.length)
-    html = `<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-msg">No hay picks disponibles hoy. Intenta más tarde.</div></div>`;
+
+  let html = warningsBanner(data.warnings);
+
+  if (topEv.length) {
+    html += `<div class="section-header"><span class="section-title">🎯 Mejor EV del Día — ML / Spread / Total</span><span class="section-count">${topEv.length}</span></div>`;
+    html += `<p style="font-size:12px;color:var(--muted);margin-bottom:16px">El mejor mercado de cada partido, comparando ML/Spread/Total por EV real.</p>`;
+    html += `<div class="game-list">${topEv.map(x => renderGameRow(x.g, x.idx)).join('')}</div>`;
+  }
+
+  html += `<div class="section-header" style="margin-top:32px"><span class="section-title">🎟 Parlays Disponibles</span></div>`;
+  html += `<div class="cards-grid">
+    ${parlaySummaryCard('Parlay Mixto',      data, 'ticket_',         'parlay_no_solido')}
+    ${parlaySummaryCard('Parlay ML + Total', data, 'ticket_mltotal_', 'parlay_mltotal_no_solido')}
+  </div>`;
 
   document.getElementById('top-picks-container').innerHTML = html;
 }
@@ -676,22 +767,44 @@ function renderAvoid(data) {
     : `<div class="empty-state"><div class="empty-icon">✅</div><div class="empty-msg">Sin picks a evitar identificados hoy.</div></div>`;
 }
 
-// ── PARLAYS (3 / 6 / 10) ─────────────────────────────────
+// ── PARLAY MIXTO / PARLAY ML+TOTAL (selector 3 / 6 / 10) ──
+let parlayLegs = { mixto: 3, mltotal: 3 };
+
+function selectParlayLegs(section, legs) {
+  parlayLegs[section] = legs;
+  const selectorId = section === 'mixto' ? 'parlay-mixto-selector' : 'parlay-mltotal-selector';
+  document.querySelectorAll(`#${selectorId} .parlay-opt`).forEach(btn => {
+    btn.classList.toggle('active', Number(btn.dataset.legs) === legs);
+  });
+  if (!dashData) return;
+  if (section === 'mixto') renderParlays(dashData);
+  else renderParlaysMlTotal(dashData);
+}
+
 function renderParlays(data) {
   const container = document.getElementById('parlays-container');
   if (data.parlay_no_solido) {
     container.innerHTML = `<div class="empty-state"><div class="empty-icon">🔒</div><div class="empty-msg">No hay jugadas sólidas suficientes hoy</div></div>`;
     return;
   }
-  const defs = [
-    { key:'ticket_3',  cls:'parlay-3'  },
-    { key:'ticket_6',  cls:'parlay-6'  },
-    { key:'ticket_10', cls:'parlay-10' },
-  ];
-  const cards = defs.map(({key,cls}) => data[key] ? renderTicketCard(data[key], cls) : null).filter(Boolean);
-  container.innerHTML = cards.length
-    ? cards.join('')
-    : `<div class="empty-state"><div class="empty-icon">🎟</div><div class="empty-msg">Sin picks suficientes para parlays hoy.</div></div>`;
+  const legs = parlayLegs.mixto;
+  const t = data['ticket_' + legs];
+  container.innerHTML = t
+    ? renderTicketCard(t, 'parlay-' + legs)
+    : `<div class="empty-state"><div class="empty-icon">🎟</div><div class="empty-msg">Sin picks suficientes para ${legs} patas hoy.</div></div>`;
+}
+
+function renderParlaysMlTotal(data) {
+  const container = document.getElementById('parlays-mltotal-container');
+  if (data.parlay_mltotal_no_solido) {
+    container.innerHTML = `<div class="empty-state"><div class="empty-icon">🔒</div><div class="empty-msg">No hay jugadas sólidas suficientes hoy</div></div>`;
+    return;
+  }
+  const legs = parlayLegs.mltotal;
+  const t = data['ticket_mltotal_' + legs];
+  container.innerHTML = t
+    ? renderTicketCard(t, 'parlay-' + legs)
+    : `<div class="empty-state"><div class="empty-icon">🎟</div><div class="empty-msg">Sin picks suficientes para ${legs} patas hoy.</div></div>`;
 }
 
 // ── TICKETS ESPECIALIZADOS ────────────────────────────────
