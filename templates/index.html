@@ -112,6 +112,7 @@
   .gold  .stat-val{color:var(--gold)}  .red  .stat-val{color:var(--red)}
   .card-footer{display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--muted)}
   .card-stake{font-weight:600;font-size:11px;padding:2px 8px;border-radius:5px;background:var(--bg3)}
+  .card-reason{font-size:11px;color:var(--red);background:var(--red-dim);border-radius:6px;padding:6px 9px;margin-bottom:10px}
 
   /* ODDS */
   .odds-badge{font-size:13px;font-weight:800;font-family:'Courier New',monospace}
@@ -724,6 +725,7 @@ function renderCard(sig) {
       </div>
       <div class="card-game">${sig.game||''}</div>
       <div class="card-selection">${sig.selection||''}</div>
+      ${color==='red' && sig.reason ? `<div class="card-reason">${sig.reason}</div>` : ''}
       <div class="fd-pick">
         <div>
           <div class="fd-pick-label">📋 FanDuel Pick</div>

@@ -319,6 +319,25 @@ def smooth_validation(prob, odds, books, ev=0.0, edge=0.0) -> float:
 # ---------------------------------------------------------------------------
 # Clasificación EFICIENCIA (MLB/NBA/NHL)
 # ---------------------------------------------------------------------------
+def efficiency_failure_reason(prob, val, ev, odds, odds_ok) -> str:
+    """
+    Detalla contra qué umbral(es) de PROBABLE (el piso más bajo para no caer
+    en EVITAR) falló el pick, para diagnosticar sin tener que inspeccionar
+    prob/val/ev manualmente en cada caso.
+    """
+    fails = []
+    if prob < 58:
+        fails.append(f"Prob {prob:.1f}% <58%")
+    if val < 60:
+        fails.append(f"Val {val:.1f} <60")
+    if ev < EFFICIENCY_MIN_EV_BLUE:
+        fails.append(f"EV {ev:.1f}% <{EFFICIENCY_MIN_EV_BLUE:.1f}%")
+    if not odds_ok:
+        fails.append(f"Odds {odds} peor que {EFFICIENCY_MAX_ODDS}")
+    if not fails:
+        return "No cumple criterios de eficiencia."
+    return "Falla: " + " · ".join(fails)
+
 def classify_efficiency(prob, val, ev, edge, odds) -> tuple[str, str, str, str]:
     ev    = ev or 0.0
     edge  = edge or 0.0
@@ -331,7 +350,8 @@ def classify_efficiency(prob, val, ev, edge, odds) -> tuple[str, str, str, str]:
     if prob >= 58 and val >= 60 and ev >= EFFICIENCY_MIN_EV_BLUE and odds_ok:
         return "blue", "📌 PROBABLE", "Alta probabilidad pero precio ajustado.", "0.25u"
 
-    return "red", "⚠ EVITAR", "No cumple criterios de eficiencia.", "0u"
+    reason = efficiency_failure_reason(prob, val, ev, odds, odds_ok)
+    return "red", "⚠ EVITAR", reason, "0u"
 
 # ---------------------------------------------------------------------------
 # Enriquecimiento
