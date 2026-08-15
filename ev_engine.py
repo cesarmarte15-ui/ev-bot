@@ -502,13 +502,17 @@ def total_signals(game: dict, sport: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 def best_market(ml: list, spread: list, total: list) -> Optional[dict]:
     """
-    Elige el mercado con mejor EV real entre ML/Spread/Total, sin filtrar
-    por color: siempre muestra el mejor disponible (aunque sea EVITAR/rojo)
-    para no ocultar el panorama del juego. El color real del pick elegido
-    viaja intacto en el resultado, así la UI lo pinta como corresponde.
+    Elige el mercado con mejor EV real entre ML/Spread/Total, mismas
+    compuertas que la clasificación SÓLIDO/PROBABLE (Prob>=58, Val>=60,
+    EV>=piso): solo compite entre picks color green/blue. Si ningún
+    mercado del partido pasa las compuertas, no hay recomendación (None)
+    en vez de mostrar el menos malo con etiqueta EVITAR contradictoria.
     """
     def best_of(signals: list) -> Optional[dict]:
-        cands = [s for s in (signals or []) if s.get("ev") is not None]
+        cands = [
+            s for s in (signals or [])
+            if s.get("ev") is not None and s.get("color") in ("green", "blue")
+        ]
         if not cands:
             return None
         return max(cands, key=lambda s: s.get("ev") or -999)
