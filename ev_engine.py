@@ -620,6 +620,22 @@ def build_ticket(name: str, pool: list, count: int, ok_fn, color: str, risk: str
         "reason":               reason,
     }
 
+def group_picks_by_game(picks: list) -> list:
+    """Reordena las patas de un ticket para que las de un mismo partido
+    queden juntas (una debajo de la otra) en vez de intercaladas con las
+    de otros partidos. Los grupos se ordenan por el mejor EV del par;
+    dentro de un grupo se conserva el orden de entrada. Solo cambia el
+    orden de visualización, no descarta ni recalcula nada."""
+    groups: dict = {}
+    for p in picks:
+        groups.setdefault(p.get("game"), []).append(p)
+    ordered_games = sorted(
+        groups.keys(),
+        key=lambda g: max((x.get("ev") or -999) for x in groups[g]),
+        reverse=True,
+    )
+    return [p for g in ordered_games for p in groups[g]]
+
 # ---------------------------------------------------------------------------
 # Dashboard principal v8.4
 # ---------------------------------------------------------------------------
@@ -710,6 +726,13 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
     dash["ticket_mltotal_3"]  = build_ticket("🎯 Parlay ML+Total — 3 Legs",  _parlay_pool_mltotal, 3,  ticket_ok_any, "yellow", "Bajo",  "3 mejores picks del día por EV (ML/Total).", max_legs_per_game=2)
     dash["ticket_mltotal_6"]  = build_ticket("🔥 Parlay ML+Total — 6 Legs",  _parlay_pool_mltotal, 6,  ticket_ok_any, "yellow", "Medio", "6 mejores picks del día por EV (ML/Total).", max_legs_per_game=2)
     dash["ticket_mltotal_10"] = build_ticket("⭐ Parlay ML+Total — 10 Legs", _parlay_pool_mltotal, 10, ticket_ok_any, "yellow", "Alto",  "10 mejores picks del día por EV (ML/Total).", max_legs_per_game=2)
+
+    # Agrupación visual: las 2 patas (ML y Total) de un mismo partido quedan
+    # juntas en vez de dispersas por EV crudo; el orden entre partidos sigue
+    # siendo por el mejor EV del par. No cambia qué picks entran ni su EV.
+    for _k in ("ticket_mltotal_3", "ticket_mltotal_6", "ticket_mltotal_10"):
+        if dash.get(_k):
+            dash[_k]["picks"] = group_picks_by_game(dash[_k]["picks"])
 
     # Alta Prob: prioriza ≥65% (su propósito); si nada llega hoy, muestra
     # igual el día completo ordenado por probabilidad descendente en vez
