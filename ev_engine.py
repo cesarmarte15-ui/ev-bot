@@ -578,16 +578,22 @@ def ticket_ok_any(sig: Optional[dict]) -> bool:
     todo el mercado por EV' — el color real de cada pick viaja intacto."""
     return sig is not None
 
-def build_ticket(name: str, pool: list, count: int, ok_fn, color: str, risk: str, reason: str) -> Optional[dict]:
+def build_ticket(name: str, pool: list, count: int, ok_fn, color: str, risk: str, reason: str,
+                  max_legs_per_game: int = 1) -> Optional[dict]:
     picks = []
-    games_seen: set = set()
+    game_leg_counts: dict[str, int] = {}
+    game_market_seen: set = set()
     for s in pool:
         if len(picks) >= count:
             break
-        if s.get("game") in games_seen or not ok_fn(s):
+        game = s.get("game")
+        if game_leg_counts.get(game, 0) >= max_legs_per_game or not ok_fn(s):
+            continue
+        if (game, s.get("market")) in game_market_seen:
             continue
         picks.append(s)
-        games_seen.add(s.get("game"))
+        game_leg_counts[game] = game_leg_counts.get(game, 0) + 1
+        game_market_seen.add((game, s.get("market")))
 
     real_count = len(picks)
     if real_count < min(count, 3):
@@ -692,13 +698,18 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
     dash["ticket_6"]  = build_ticket("🔥 Parlay Mixto — 6 Legs",  _parlay_pool, 6,  ticket_ok_any, "yellow", "Medio", "6 mejores picks del día por EV (ML/Spread/Total).")
     dash["ticket_10"] = build_ticket("⭐ Parlay Mixto — 10 Legs", _parlay_pool, 10, ticket_ok_any, "yellow", "Alto",  "10 mejores picks del día por EV (ML/Spread/Total).")
 
-    # Parlay ML + Total (3/6/10 legs) — excluye Spread, mismo criterio.
+    # Parlay ML + Total (3/6/10 legs) — excluye Spread. A diferencia del
+    # Mixto, acá SÍ se permiten ambas patas del mismo partido (ML y Total
+    # como legs separados, no solo la mejor de las dos) porque el parlay
+    # está pensado como "ML + Total" y no como diversificación entre juegos;
+    # max_legs_per_game=2 tapa en 1 ML + 1 Total por partido (nunca 2 legs
+    # del mismo mercado, eso lo evita game_market_seen en build_ticket).
     _parlay_pool_mltotal = sorted(
         [s for s in all_signals if s.get("market") != "Spread"], key=sorter_ev, reverse=True
     )
-    dash["ticket_mltotal_3"]  = build_ticket("🎯 Parlay ML+Total — 3 Legs",  _parlay_pool_mltotal, 3,  ticket_ok_any, "yellow", "Bajo",  "3 mejores picks del día por EV (ML/Total).")
-    dash["ticket_mltotal_6"]  = build_ticket("🔥 Parlay ML+Total — 6 Legs",  _parlay_pool_mltotal, 6,  ticket_ok_any, "yellow", "Medio", "6 mejores picks del día por EV (ML/Total).")
-    dash["ticket_mltotal_10"] = build_ticket("⭐ Parlay ML+Total — 10 Legs", _parlay_pool_mltotal, 10, ticket_ok_any, "yellow", "Alto",  "10 mejores picks del día por EV (ML/Total).")
+    dash["ticket_mltotal_3"]  = build_ticket("🎯 Parlay ML+Total — 3 Legs",  _parlay_pool_mltotal, 3,  ticket_ok_any, "yellow", "Bajo",  "3 mejores picks del día por EV (ML/Total).", max_legs_per_game=2)
+    dash["ticket_mltotal_6"]  = build_ticket("🔥 Parlay ML+Total — 6 Legs",  _parlay_pool_mltotal, 6,  ticket_ok_any, "yellow", "Medio", "6 mejores picks del día por EV (ML/Total).", max_legs_per_game=2)
+    dash["ticket_mltotal_10"] = build_ticket("⭐ Parlay ML+Total — 10 Legs", _parlay_pool_mltotal, 10, ticket_ok_any, "yellow", "Alto",  "10 mejores picks del día por EV (ML/Total).", max_legs_per_game=2)
 
     # Alta Prob: prioriza ≥65% (su propósito); si nada llega hoy, muestra
     # igual el día completo ordenado por probabilidad descendente en vez
