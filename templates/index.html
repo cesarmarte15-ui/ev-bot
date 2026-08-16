@@ -28,6 +28,7 @@
   .logo-text{font-size:16px;font-weight:700;letter-spacing:-.3px}
   .version-badge{background:var(--gold-dim);color:var(--gold);font-size:11px;font-weight:600;
     padding:2px 8px;border-radius:20px;border:1px solid var(--gold)}
+  .header-datetime{font-size:13px;font-weight:600;color:var(--text);display:flex;align-items:center;gap:6px}
   .header-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
   .btn{padding:8px 16px;border-radius:var(--radius);border:none;font-size:13px;font-weight:600;
     cursor:pointer;transition:opacity .15s}
@@ -74,6 +75,23 @@
   .parlay-summary-row{display:flex;justify-content:space-between;font-size:12px;padding:7px 0;
     border-bottom:1px solid var(--border);color:var(--muted)}
   .parlay-summary-row:last-child{border-bottom:none}
+  .parlay-summary-legs{display:flex;flex-direction:column;gap:3px;margin-bottom:8px;
+    padding-bottom:8px;border-bottom:1px dashed var(--border)}
+  .parlay-summary-leg{font-size:11px;color:var(--text)}
+
+  /* CLASIFICACION DEL DIA — conteo SOLIDO/PROBABLE/EVITAR en el Dashboard */
+  .stat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px}
+  .stat-tile{border:1px solid var(--border);border-radius:var(--radius);padding:14px;
+    text-align:center;background:var(--bg2)}
+  .stat-tile.green{border-color:var(--green);background:var(--green-dim)}
+  .stat-tile.blue {border-color:var(--blue); background:var(--blue-dim)}
+  .stat-tile.red  {border-color:var(--red);  background:var(--red-dim)}
+  .stat-tile-value{font-size:26px;font-weight:800}
+  .stat-tile.green .stat-tile-value{color:var(--green)}
+  .stat-tile.blue  .stat-tile-value{color:var(--blue)}
+  .stat-tile.red   .stat-tile-value{color:var(--red)}
+  .stat-tile-label{font-size:11px;color:var(--muted);font-weight:700;letter-spacing:.3px;margin-top:4px}
+  @media(max-width:600px){.stat-grid{grid-template-columns:1fr}}
 
   /* CARDS */
   .cards-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;margin-bottom:8px}
@@ -158,6 +176,20 @@
   .market-pill.yellow{background:var(--yellow-dim);color:var(--yellow);border-color:var(--yellow)}
   .market-pill.muted {background:var(--bg3);color:var(--muted);border-color:var(--border)}
 
+  /* TOP EV ROW — resumen ejecutivo del Dashboard, mas compacto y sin el
+     detalle por mercado que ya muestra "Todos los Juegos" (diferenciacion). */
+  .top-ev-row{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);
+    padding:9px 14px;cursor:pointer;display:flex;align-items:center;gap:12px;
+    transition:border-color .15s,background .15s}
+  .top-ev-row:hover{border-color:#3a4060;background:var(--bg3)}
+  .top-ev-rank{font-size:12px;font-weight:800;color:var(--muted);min-width:20px;text-align:center;flex-shrink:0}
+  .top-ev-main{flex:1;min-width:0;display:flex;align-items:baseline;gap:8px}
+  .top-ev-name{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .top-ev-pick{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .top-ev-right{display:flex;align-items:center;gap:8px;flex-shrink:0}
+  .top-ev-ev{font-size:12px;font-weight:800;min-width:52px;text-align:right}
+  .top-ev-ev.pos{color:var(--green)} .top-ev-ev.neg{color:var(--red)}
+
   /* MODAL */
   .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:1000;
     display:none;align-items:center;justify-content:center;padding:16px}
@@ -213,6 +245,8 @@
   .ticket-badge.gold  {color:var(--gold); border-color:var(--gold); background:var(--gold-dim)}
   .ticket-badge.yellow{color:var(--yellow);border-color:var(--yellow);background:var(--yellow-dim)}
   .ticket-picks{display:flex;flex-direction:column;gap:8px}
+  .ticket-game-group{display:flex;flex-direction:column;gap:6px;
+    border:1px solid var(--border);border-radius:9px;padding:8px}
   .ticket-pick{display:flex;align-items:center;justify-content:space-between;
     background:var(--bg3);border-radius:7px;padding:10px 14px;gap:8px;flex-wrap:wrap}
   .ticket-pick-left{flex:1;min-width:0}
@@ -240,12 +274,14 @@
     text-align:center;border:2px solid}
   .prob-circle.tier-a{border-color:var(--green);color:var(--green);background:var(--green-dim)}
   .prob-circle.tier-b{border-color:var(--blue); color:var(--blue); background:var(--blue-dim)}
+  .prob-circle.tier-neutral{border-color:var(--muted); color:var(--muted); background:var(--bg3)}
   .prob-info{flex:1;min-width:0}
   .prob-sel{font-size:15px;font-weight:700;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .prob-game{font-size:11px;color:var(--muted);margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .prob-bar-wrap{height:3px;background:var(--bg3);border-radius:2px;overflow:hidden}
   .prob-bar-fill{height:100%;border-radius:2px}
   .prob-bar-fill.tier-a{background:var(--green)} .prob-bar-fill.tier-b{background:var(--blue)}
+  .prob-bar-fill.tier-neutral{background:var(--muted)}
   .prob-right{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0}
   .prob-fd-line{font-family:'Courier New',monospace;font-size:11px;color:#38bdf8;text-align:right}
   .prob-badges{display:flex;gap:6px;align-items:center}
@@ -293,6 +329,7 @@
     <span class="logo-text">EV Bot Pro</span>
     <span class="version-badge">v8.5</span>
   </div>
+  <div class="header-datetime" id="header-datetime">🕐 --</div>
   <div class="header-right">
     <span id="status-dot"></span>
     <span id="status-text">Cargando...</span>
@@ -377,9 +414,9 @@
     <div class="section-header" style="margin-top:0"><span class="section-title">🎯 Parlay ML + Total</span></div>
     <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Solo Moneyline y Total (sin Spread), ordenados por EV.</p>
     <div class="parlay-selector" id="parlay-mltotal-selector">
-      <button class="parlay-opt active" data-legs="3"  onclick="selectParlayLegs('mltotal',3)">3 patas</button>
-      <button class="parlay-opt"        data-legs="6"  onclick="selectParlayLegs('mltotal',6)">6 patas</button>
-      <button class="parlay-opt"        data-legs="10" onclick="selectParlayLegs('mltotal',10)">10 patas</button>
+      <button class="parlay-opt active" data-legs="3"  onclick="selectParlayLegs('mltotal',3)">3 juegos</button>
+      <button class="parlay-opt"        data-legs="6"  onclick="selectParlayLegs('mltotal',6)">6 juegos</button>
+      <button class="parlay-opt"        data-legs="10" onclick="selectParlayLegs('mltotal',10)">10 juegos</button>
     </div>
     <div id="parlays-mltotal-container"></div>
 
@@ -399,6 +436,18 @@
 
 <script>
 let dashData = null;
+
+// ── RELOJ DE HEADER (fecha + hora, visible en todos los tabs) ─────────────
+function updateHeaderClock() {
+  const el = document.getElementById('header-datetime');
+  if (!el) return;
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('es', { weekday: 'short', day: '2-digit', month: 'short' });
+  const timeStr = now.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+  el.textContent = `🕐 ${dateStr} · ${timeStr}`;
+}
+updateHeaderClock();
+setInterval(updateHeaderClock, 30 * 1000);
 
 // ── TABS ──────────────────────────────────────────────────
 function showTab(name) {
@@ -492,19 +541,43 @@ function warningsBanner(warnings) {
     </div>`;
 }
 
+function classificationSummary(data) {
+  const green = (data.efficiency_green || []).length;
+  const blue  = (data.efficiency_blue  || []).length;
+  const red   = (data.avoid            || []).length;
+  return `
+    <div class="stat-grid">
+      <div class="stat-tile green"><div class="stat-tile-value">${green}</div><div class="stat-tile-label">🔒 SÓLIDO</div></div>
+      <div class="stat-tile blue"><div class="stat-tile-value">${blue}</div><div class="stat-tile-label">📌 PROBABLE</div></div>
+      <div class="stat-tile red"><div class="stat-tile-value">${red}</div><div class="stat-tile-label">⚠ EVITAR</div></div>
+    </div>`;
+}
+
 function parlaySummaryCard(title, data, prefix) {
+  const t3 = data[prefix + '3'];
+  const legsPreview = (t3 && t3.picks && t3.picks.length)
+    ? `<div class="parlay-summary-legs">
+        ${t3.picks.slice(0, 3).map(p => `<div class="parlay-summary-leg">${p.selection || ''} <span style="color:var(--muted)">· ${p.short_market || p.market || ''}</span></div>`).join('')}
+      </div>`
+    : '';
+
   const rows = [3, 6, 10].map(n => {
     const t = data[prefix + n];
     if (!t) return '';
+    const partial = t.insufficient ? ` <span style="color:var(--gold)">· parcial</span>` : '';
+    const label = t.games_count != null
+      ? `${n} juegos · ${t.picks_count} legs`
+      : `${n} patas · ${t.picks_count} picks`;
     return `
       <div class="parlay-summary-row">
-        <span>${n} patas · ${t.picks_count} picks</span>
+        <span>${label}${partial}</span>
         <span>Prob ${t.combined_probability != null ? t.combined_probability.toFixed(1) : '--'}%</span>
       </div>`;
   }).join('');
   return `
     <div class="parlay-summary-card">
       <div class="parlay-summary-title">🎯 ${title}</div>
+      ${legsPreview}
       ${rows || '<div style="font-size:12px;color:var(--muted)">Sin datos suficientes hoy.</div>'}
       <button class="btn btn-outline" style="margin-top:12px;width:100%" onclick="showTab('tickets')">Ver parlays →</button>
     </div>`;
@@ -528,11 +601,12 @@ function renderDashboard(data) {
   }
 
   let html = warningsBanner(data.warnings);
+  html += classificationSummary(data);
 
   if (topEv.length) {
     html += `<div class="section-header"><span class="section-title">🎯 Mejor EV del Día — ML / Spread / Total</span><span class="section-count">${topEv.length}</span></div>`;
-    html += `<p style="font-size:12px;color:var(--muted);margin-bottom:16px">El mejor mercado de cada partido, comparando ML/Spread/Total por EV real.</p>`;
-    html += `<div class="game-list">${topEv.map(x => renderGameRow(x.g, x.idx)).join('')}</div>`;
+    html += `<p style="font-size:12px;color:var(--muted);margin-bottom:16px">Resumen ejecutivo: el mejor pick de cada partido por EV real, cruzando ML/Spread/Total. Para ver los 3 mercados completos de cada juego, andá a "Todos los Juegos".</p>`;
+    html += `<div class="game-list">${topEv.map((x, rank) => renderTopEvRow(x.g, x.idx, rank + 1)).join('')}</div>`;
   }
 
   html += `<div class="section-header" style="margin-top:32px"><span class="section-title">🎟 Parlays Disponibles</span></div>`;
@@ -555,6 +629,34 @@ function renderAllGames(data) {
     return;
   }
   el.innerHTML = games.map((g,i) => renderGameRow(g,i)).join('');
+}
+
+// Fila compacta de "leaderboard" para el Dashboard: rank, matchup, mejor
+// pick y EV. A diferencia de renderGameRow (usada en "Todos los Juegos"),
+// no repite los 3 mini-badges ML/SPR/TOT ni la hora.
+function renderTopEvRow(g, idx, rank) {
+  const bm = g.best_market;
+  if (!bm) return '';
+  const oddsRaw   = bm.fanduel_odds ?? bm.odds;
+  const oddsStr   = oddsRaw != null ? fmtOdds(oddsRaw) : '';
+  const oddsClass = oddsRaw > 0 ? 'odds-pos' : 'odds-neg';
+  const mktLabel  = bm.recommended_market || 'ML';
+  const evVal     = bm.ev;
+  const evStr     = evVal != null ? (evVal > 0 ? '+' : '') + evVal.toFixed(1) + '%' : '--';
+  const evClass   = evVal != null && evVal >= 0 ? 'pos' : 'neg';
+  return `
+    <div class="top-ev-row" onclick="openModal(${idx})">
+      <div class="top-ev-rank">#${rank}</div>
+      <div class="top-ev-main">
+        <span class="top-ev-name">${g.game || ''}</span>
+        <span class="top-ev-pick">${mktLabel} · ${bm.selection || ''}</span>
+      </div>
+      <div class="top-ev-right">
+        <span class="market-pill ${bm.color || 'blue'}">${bm.label || mktLabel}</span>
+        ${oddsStr ? `<span class="odds-badge ${oddsClass}">${oddsStr}</span>` : ''}
+        <span class="top-ev-ev ${evClass}">${evStr}</span>
+      </div>
+    </div>`;
 }
 
 function renderGameRow(g, idx) {
@@ -790,7 +892,7 @@ function renderParlaysMlTotal(data) {
   const t = data['ticket_mltotal_' + legs];
   container.innerHTML = t
     ? renderTicketCard(t, 'parlay-' + legs)
-    : `<div class="empty-state"><div class="empty-icon">🎟</div><div class="empty-msg">Sin picks suficientes para ${legs} patas hoy.</div></div>`;
+    : `<div class="empty-state"><div class="empty-icon">🎟</div><div class="empty-msg">Sin partidos suficientes para armar un parlay de ${legs} juegos hoy.</div></div>`;
 }
 
 // ── TICKETS ESPECIALIZADOS ────────────────────────────────
@@ -814,33 +916,52 @@ function picksBorderColor(picks) {
   return 'var(--yellow)';
 }
 
+function renderTicketPick(p) {
+  const oddsRaw = p.fanduel_available ? p.fanduel_odds : p.odds;
+  const oddsStr = fmtOdds(oddsRaw) || '--';
+  const oc      = oddsRaw > 0 ? 'odds-pos' : 'odds-neg';
+  const mkt     = p.short_market || p.market || 'ML';
+  const fdBadge = p.fanduel_available
+    ? `<span style="font-size:10px;color:#38bdf8;font-weight:700">FD</span>`
+    : `<span style="font-size:10px;color:#f59e0b" title="Sin FanDuel">⚠</span>`;
+  return `
+    <div class="ticket-pick">
+      <div class="ticket-pick-left">
+        <div class="ticket-pick-game">${p.game||''} · ${p.sport||''}</div>
+        <div class="ticket-pick-sel">${p.selection||''} · ${mkt}</div>
+      </div>
+      <div class="ticket-pick-right">
+        ${fdBadge}
+        <span class="odds-badge ${oc}">${oddsStr}</span>
+        <span style="font-size:12px;color:var(--muted)">${p.probability?.toFixed(1)}%</span>
+      </div>
+    </div>`;
+}
+
 function renderTicketCard(t, extraClass) {
   const tPicks = t.picks || [];
-  const picks  = tPicks.map(p => {
-    const oddsRaw = p.fanduel_available ? p.fanduel_odds : p.odds;
-    const oddsStr = fmtOdds(oddsRaw) || '--';
-    const oc      = oddsRaw > 0 ? 'odds-pos' : 'odds-neg';
-    const mkt     = p.short_market || p.market || 'ML';
-    const fdBadge = p.fanduel_available
-      ? `<span style="font-size:10px;color:#38bdf8;font-weight:700">FD</span>`
-      : `<span style="font-size:10px;color:#f59e0b" title="Sin FanDuel">⚠</span>`;
-    return `
-      <div class="ticket-pick">
-        <div class="ticket-pick-left">
-          <div class="ticket-pick-game">${p.game||''} · ${p.sport||''}</div>
-          <div class="ticket-pick-sel">${p.selection||''} · ${mkt}</div>
-        </div>
-        <div class="ticket-pick-right">
-          ${fdBadge}
-          <span class="odds-badge ${oc}">${oddsStr}</span>
-          <span style="font-size:12px;color:var(--muted)">${p.probability?.toFixed(1)}%</span>
-        </div>
-      </div>`;
-  }).join('');
+  // ticket_mltotal_* trae games_count (juegos, no patas): agrupa visualmente
+  // las 2 patas de cada partido en su propio bloque con borde separador en
+  // vez de la lista plana que usan Parlay Mixto y Ticket Eficiencia.
+  const groupByGame = t.games_count != null;
+  let picks;
+  if (groupByGame) {
+    const groups = [];
+    for (const p of tPicks) {
+      const last = groups[groups.length - 1];
+      if (last && last.game === p.game) last.items.push(p);
+      else groups.push({ game: p.game, items: [p] });
+    }
+    picks = groups.map(g => `<div class="ticket-game-group">${g.items.map(renderTicketPick).join('')}</div>`).join('');
+  } else {
+    picks = tPicks.map(renderTicketPick).join('');
+  }
 
   const bc          = ['gold','blue','yellow','red'].includes(t.color) ? t.color : 'green';
   const uid         = 'cp-' + Math.random().toString(36).slice(2,8);
   const borderColor = picksBorderColor(tPicks);
+  const statVal     = groupByGame ? t.games_count : tPicks.length;
+  const statLbl     = groupByGame ? `Juegos (${tPicks.length} legs)` : 'Picks';
   return `
     <div class="ticket-card ${extraClass}" style="border-top-color:${borderColor}">
       <div class="ticket-header">
@@ -852,7 +973,7 @@ function renderTicketCard(t, extraClass) {
       </div>
       <div class="ticket-picks">${picks}</div>
       <div class="ticket-stats">
-        <div class="ticket-stat"><div class="ticket-stat-val">${tPicks.length}</div><div class="ticket-stat-lbl">Picks</div></div>
+        <div class="ticket-stat"><div class="ticket-stat-val">${statVal}</div><div class="ticket-stat-lbl">${statLbl}</div></div>
         <div class="ticket-stat"><div class="ticket-stat-val">${t.validation?.toFixed(1)}</div><div class="ticket-stat-lbl">Validación</div></div>
         <div class="ticket-stat"><div class="ticket-stat-val">${t.combined_probability?.toFixed(2)}%</div><div class="ticket-stat-lbl">Prob. Combinada</div></div>
       </div>
@@ -875,7 +996,12 @@ function renderHighProb(data) {
   }
   list.innerHTML = picks.map((p, i) => {
     const prob     = p.probability || 0;
-    const tier     = prob >= 72 ? 'tier-a' : 'tier-b';
+    // El tier del circulo refleja la clasificacion real (color), no solo el
+    // numero crudo de probabilidad: reserva verde/azul para SOLIDO/PROBABLE,
+    // neutro cuando la clasificacion general es EVITAR (rojo).
+    const tier     = p.color === 'green' ? 'tier-a'
+                    : p.color === 'blue'  ? 'tier-b'
+                    : 'tier-neutral';
     const probStr  = prob.toFixed(1)+'%';
     const oddsRaw  = p.fanduel_available ? p.fanduel_odds : p.odds;
     const oddsStr  = fmtOdds(oddsRaw) || '--';

@@ -45,7 +45,7 @@ CACHE_TTL: int   = int(os.getenv("CACHE_TTL", "900"))
 # Umbrales
 EFFICIENCY_MIN_PROB     = 60.0   # % mínimo para pick eficiente
 EFFICIENCY_MIN_VAL      = 63.0   # validación mínima
-EFFICIENCY_MAX_ODDS     = -130   # no más caro que -130 en americano para eficiencia
+EFFICIENCY_MAX_ODDS     = -180   # no más caro que -180 en americano para eficiencia
 EFFICIENCY_MIN_EV_GREEN = 0.0    # piso de EV para SÓLIDO
 EFFICIENCY_MIN_EV_BLUE  = -1.0   # piso de EV para PROBABLE
 
@@ -160,6 +160,24 @@ def is_game_today(game: dict) -> bool:
         dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
         z = ZoneInfo(LOCAL_TZ)
         return dt.astimezone(z).date() == datetime.now(z).date()
+    except Exception:
+        return False
+
+def is_upcoming(game: dict) -> bool:
+    """
+    True si commence_time todavía no pasó. The Odds API no distingue
+    pregame de en vivo en la respuesta (mismo endpoint /odds para ambos) y
+    una vez que el partido arranca las cuotas dejan de ser confiables para
+    recomendar (casas suspenden/desactualizan líneas de forma dispareja).
+    Excluimos esos partidos en vez de mostrarlos con datos potencialmente
+    obsoletos.
+    """
+    s = game.get("commence_time")
+    if not s:
+        return False
+    try:
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        return dt > datetime.now(dt.tzinfo)
     except Exception:
         return False
 
@@ -416,11 +434,21 @@ def spread_signals(game: dict, sport: str) -> list[dict]:
     if not outs:
         return []
     fair, counts = no_vig_h2h_probabilities(outs)
+
+    # Linea de consenso por lado: la que tiene mas casas de acuerdo. Si otra
+    # casa cotiza un point distinto (linea movida/alt), se etiqueta como
+    # "(Alt)" en vez de aparecer como si fuera un mercado separado sin marcar.
+    main_point: dict[str, float] = {}
+    for (name, point), c in counts.items():
+        if name not in main_point or c > counts.get((name, main_point[name]), 0):
+            main_point[name] = point
+
     signals = []
     for (name, point), p in fair.items():
         best = best_price_filtered(outs, name, p, point=point)
         if not best:
             continue
+        is_alt = point != main_point.get(name)
         odds  = best["american_odds"]
         prob  = round(clamp(p * 100, *PROB_CLAMP), 1)
         ev, edge = safe_ev_edge(p, odds)
@@ -428,12 +456,15 @@ def spread_signals(game: dict, sport: str) -> list[dict]:
         color, label, reason, stake = classify_efficiency(prob, val, ev, edge, odds)
         fd_odds   = fanduel_price(outs, name, point)
         point_str = (f"+{point}" if (point or 0) > 0 else str(point)) if point is not None else ""
+        selection = f"{name} {point_str}".strip()
+        if is_alt:
+            selection += " (Alt)"
         signals.append(enrich({
             "mode":              "efficiency",
             "sport":             sport,
             "market":            "Spread",
             "short_market":      "SPR",
-            "selection":         f"{name} {point_str}".strip(),
+            "selection":         selection,
             "probability":       prob,
             "validation":        val,
             "color":             color,
@@ -447,6 +478,7 @@ def spread_signals(game: dict, sport: str) -> list[dict]:
             "bookmaker":         best["bookmaker"],
             "book_count":        counts.get((name, point), 0),
             "is_primary":        False,
+            "is_alt_line":       is_alt,
             "fanduel_odds":      fd_odds,
             "fanduel_available": fd_odds is not None,
             "point":             point,
@@ -578,28 +610,67 @@ def ticket_ok_any(sig: Optional[dict]) -> bool:
     todo el mercado por EV' — el color real de cada pick viaja intacto."""
     return sig is not None
 
+def _market_cap(count: int) -> int:
+    """Tope de patas que puede aportar un solo mercado (~2/3 del ticket,
+    piso 2) para que un mercado no monopolice todas las patas."""
+    return max(2, -(-(count * 2) // 3))
+
 def build_ticket(name: str, pool: list, count: int, ok_fn, color: str, risk: str, reason: str,
-                  max_legs_per_game: int = 1) -> Optional[dict]:
+                  max_per_market: Optional[int] = None, max_legs_per_game: int = 1) -> Optional[dict]:
     picks = []
     game_leg_counts: dict[str, int] = {}
     game_market_seen: set = set()
+    market_counts: dict[str, int] = {}
+
+    def admissible(s):
+        game = s.get("game")
+        if game_leg_counts.get(game, 0) >= max_legs_per_game:
+            return False
+        if (game, s.get("market")) in game_market_seen:
+            return False
+        return True
+
+    def take(s):
+        picks.append(s)
+        game = s.get("game")
+        game_leg_counts[game] = game_leg_counts.get(game, 0) + 1
+        game_market_seen.add((game, s.get("market")))
+        m = s.get("market")
+        market_counts[m] = market_counts.get(m, 0) + 1
+
+    # Primera pasada: respeta el tope por mercado (diversifica cuando hay datos).
     for s in pool:
         if len(picks) >= count:
             break
-        game = s.get("game")
-        if game_leg_counts.get(game, 0) >= max_legs_per_game or not ok_fn(s):
+        if not admissible(s) or not ok_fn(s):
             continue
-        if (game, s.get("market")) in game_market_seen:
+        if max_per_market is not None and market_counts.get(s.get("market"), 0) >= max_per_market:
             continue
-        picks.append(s)
-        game_leg_counts[game] = game_leg_counts.get(game, 0) + 1
-        game_market_seen.add((game, s.get("market")))
+        take(s)
+
+    # Segunda pasada: si no alcanzó el count por falta de diversidad ese día,
+    # completa ignorando el tope — mejor rellenar por EV real que dejar el
+    # ticket corto por una diversidad que los datos no dan.
+    if len(picks) < count:
+        for s in pool:
+            if len(picks) >= count:
+                break
+            if not admissible(s) or not ok_fn(s):
+                continue
+            take(s)
 
     real_count = len(picks)
-    if real_count < min(count, 3):
+    if real_count < 3:
         return None
 
+    insufficient = real_count < count
     dynamic_name = name.replace(str(count), str(real_count)) if str(count) in name else f"{name} ({real_count})"
+    if insufficient:
+        dynamic_reason = f"Solo {real_count} disponibles hoy (se buscaban {count})."
+    elif str(count) in reason:
+        dynamic_reason = reason.replace(str(count), str(real_count))
+    else:
+        dynamic_reason = reason
 
     comb = 1.0
     avg  = 0.0
@@ -614,10 +685,11 @@ def build_ticket(name: str, pool: list, count: int, ok_fn, color: str, risk: str
         "picks":                picks,
         "picks_count":          real_count,
         "target_count":         count,
+        "insufficient":         insufficient,
         "validation":           round(clamp(avg, *VAL_CLAMP), 1),
         "combined_probability": round(clamp(comb * 100, 0.1, 95), 1),
         "risk":                 risk,
-        "reason":               reason,
+        "reason":               dynamic_reason,
     }
 
 def group_picks_by_game(picks: list) -> list:
@@ -636,15 +708,16 @@ def group_picks_by_game(picks: list) -> list:
     )
     return [p for g in ordered_games for p in groups[g]]
 
-def build_mltotal_ticket(name: str, pool: list, count: int, color: str, risk: str, reason: str) -> Optional[dict]:
+def build_mltotal_ticket(name: str, pool: list, games_target: int, color: str, risk: str, reason: str) -> Optional[dict]:
     """
     A diferencia de build_ticket (arma la lista pata por pata rankeando por
     EV individual sobre todo el pool), este arma el parlay ML+Total
     eligiendo PARTIDOS por el mejor EV combinado (ML+Total de ese partido)
     e incluye siempre AMBAS patas del partido elegido — nunca un partido
-    suelto con una sola pata. 'count' es el objetivo de patas; el número
-    real de partidos elegidos es round(count/2) (2 patas por partido salvo
-    que a ese partido le falte un mercado ese día).
+    suelto con una sola pata. 'games_target' es el número de PARTIDOS que
+    arma el parlay (no patas): cada partido aporta hasta 2 patas (ML+Total),
+    así que el total de patas del ticket es normalmente 2x games_target
+    (menos si a algún partido elegido le falta uno de los dos mercados hoy).
     """
     games: dict[str, list] = {}
     for s in pool:
@@ -662,35 +735,45 @@ def build_mltotal_ticket(name: str, pool: list, count: int, color: str, risk: st
     combined_ev = lambda g: sum((l.get("ev") or 0) for l in game_legs[g])
     ordered_games = sorted(game_legs.keys(), key=combined_ev, reverse=True)
 
-    target_games = max(1, round(count / 2))
+    selected_games = ordered_games[:games_target]
     picks = []
-    for g in ordered_games[:target_games]:
+    for g in selected_games:
         picks.extend(game_legs[g])
 
-    real_count = len(picks)
-    if real_count < min(count, 3):
+    games_count = len(selected_games)
+    legs_count  = len(picks)
+    if games_count < min(games_target, 2):
         return None
 
     picks = group_picks_by_game(picks)
-    dynamic_name = name.replace(str(count), str(real_count)) if str(count) in name else f"{name} ({real_count})"
+    insufficient  = games_count < games_target
+    dynamic_name  = name.replace(str(games_target), str(games_count)) if str(games_target) in name else f"{name} ({games_count})"
+    if insufficient:
+        dynamic_reason = f"Solo {games_count} juegos disponibles hoy (se buscaban {games_target})."
+    elif str(games_target) in reason:
+        dynamic_reason = reason.replace(str(games_target), str(games_count))
+    else:
+        dynamic_reason = reason
 
     comb = 1.0
     avg  = 0.0
     for x in picks:
         comb *= clamp(x.get("probability", 1) / 100, 0.01, 0.99)
         avg  += x.get("validation", 0)
-    avg /= real_count
+    avg /= legs_count
 
     return {
         "name":                 dynamic_name,
         "color":                color,
         "picks":                picks,
-        "picks_count":          real_count,
-        "target_count":         count,
+        "picks_count":          legs_count,
+        "games_count":          games_count,
+        "target_count":         games_target,
+        "insufficient":         insufficient,
         "validation":           round(clamp(avg, *VAL_CLAMP), 1),
         "combined_probability": round(clamp(comb * 100, 0.1, 95), 1),
         "risk":                 risk,
-        "reason":               reason,
+        "reason":               dynamic_reason,
     }
 
 # ---------------------------------------------------------------------------
@@ -726,7 +809,7 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
         try:
             games, from_cache, ttl = fetch_odds(key, force_refresh=force_refresh)
             total = len(games)
-            games = [g for g in games if is_game_today(g)]
+            games = [g for g in games if is_game_today(g) and is_upcoming(g)]
             dash["sports"][label] = {
                 "ok": True, "sport_key": key,
                 "games_count": len(games), "total_api_games": total,
@@ -765,11 +848,13 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
 
     # Parlay Mixto (3/6/10 legs) — ML + Spread + Total, top EV real del día
     # sin filtrar por color. Solo devuelve None si literalmente no hay 3
-    # juegos distintos con datos hoy (build_ticket ya lo garantiza).
+    # juegos distintos con datos hoy (build_ticket ya lo garantiza). El tope
+    # por mercado evita que ML monopolice las patas cuando hay Spread/Total
+    # disponibles (build_ticket cae a EV puro si ese día no hay diversidad real).
     _parlay_pool = sorted(all_signals, key=sorter_ev, reverse=True)
-    dash["ticket_3"]  = build_ticket("🎯 Parlay Mixto — 3 Legs",  _parlay_pool, 3,  ticket_ok_any, "yellow", "Bajo",  "3 mejores picks del día por EV (ML/Spread/Total).")
-    dash["ticket_6"]  = build_ticket("🔥 Parlay Mixto — 6 Legs",  _parlay_pool, 6,  ticket_ok_any, "yellow", "Medio", "6 mejores picks del día por EV (ML/Spread/Total).")
-    dash["ticket_10"] = build_ticket("⭐ Parlay Mixto — 10 Legs", _parlay_pool, 10, ticket_ok_any, "yellow", "Alto",  "10 mejores picks del día por EV (ML/Spread/Total).")
+    dash["ticket_3"]  = build_ticket("🎯 Parlay Mixto — 3 Legs",  _parlay_pool, 3,  ticket_ok_any, "yellow", "Bajo",  "3 mejores picks del día por EV (ML/Spread/Total).", max_per_market=_market_cap(3))
+    dash["ticket_6"]  = build_ticket("🔥 Parlay Mixto — 6 Legs",  _parlay_pool, 6,  ticket_ok_any, "yellow", "Medio", "6 mejores picks del día por EV (ML/Spread/Total).", max_per_market=_market_cap(6))
+    dash["ticket_10"] = build_ticket("⭐ Parlay Mixto — 10 Legs", _parlay_pool, 10, ticket_ok_any, "yellow", "Alto",  "10 mejores picks del día por EV (ML/Spread/Total).", max_per_market=_market_cap(10))
 
     # Parlay ML + Total (3/6/10 legs) — excluye Spread. Elige PARTIDOS por
     # el mejor EV combinado (ML+Total de ese partido), no patas sueltas por
@@ -777,9 +862,9 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
     # (build_mltotal_ticket ya lo garantiza, nunca deja un partido con 1 sola
     # pata salvo que ese día le falte un mercado).
     _parlay_pool_mltotal = [s for s in all_signals if s.get("market") != "Spread"]
-    dash["ticket_mltotal_3"]  = build_mltotal_ticket("🎯 Parlay ML+Total — 3 Legs",  _parlay_pool_mltotal, 3,  "yellow", "Bajo",  "3 mejores picks del día por EV (ML/Total).")
-    dash["ticket_mltotal_6"]  = build_mltotal_ticket("🔥 Parlay ML+Total — 6 Legs",  _parlay_pool_mltotal, 6,  "yellow", "Medio", "6 mejores picks del día por EV (ML/Total).")
-    dash["ticket_mltotal_10"] = build_mltotal_ticket("⭐ Parlay ML+Total — 10 Legs", _parlay_pool_mltotal, 10, "yellow", "Alto",  "10 mejores picks del día por EV (ML/Total).")
+    dash["ticket_mltotal_3"]  = build_mltotal_ticket("🎯 Parlay ML+Total — 3 Juegos",  _parlay_pool_mltotal, 3,  "yellow", "Bajo",  "3 mejores juegos del día por EV combinado (ML+Total).")
+    dash["ticket_mltotal_6"]  = build_mltotal_ticket("🔥 Parlay ML+Total — 6 Juegos",  _parlay_pool_mltotal, 6,  "yellow", "Medio", "6 mejores juegos del día por EV combinado (ML+Total).")
+    dash["ticket_mltotal_10"] = build_mltotal_ticket("⭐ Parlay ML+Total — 10 Juegos", _parlay_pool_mltotal, 10, "yellow", "Alto",  "10 mejores juegos del día por EV combinado (ML+Total).")
 
     # Alta Prob: prioriza ≥65% (su propósito); si nada llega hoy, muestra
     # igual el día completo ordenado por probabilidad descendente en vez
@@ -805,7 +890,7 @@ def debug_all_sports() -> dict:
         try:
             games, fc, ttl = fetch_odds(key)
             total = len(games)
-            games = [g for g in games if is_game_today(g)]
+            games = [g for g in games if is_game_today(g) and is_upcoming(g)]
             res["sports"][label] = {
                 "ok": True, "sport_key": key,
                 "games_count": len(games), "total_api_games": total,
