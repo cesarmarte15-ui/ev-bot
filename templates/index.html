@@ -401,7 +401,7 @@
   <!-- TICKETS -->
   <div class="tab-content" id="content-tickets">
     <div class="section-header"><span class="section-title">🎯 Parlay Mixto</span></div>
-    <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Picks de los 3 mercados (ML · Spread · Total) ordenados por EV.</p>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Picks de los 3 mercados (ML · Spread · Total) ordenados por edge real.</p>
     <div class="parlay-selector" id="parlay-mixto-selector">
       <button class="parlay-opt active" data-legs="3"  onclick="selectParlayLegs('mixto',3)">3 patas</button>
       <button class="parlay-opt"        data-legs="6"  onclick="selectParlayLegs('mixto',6)">6 patas</button>
@@ -412,7 +412,7 @@
     <div class="section-divider"></div>
 
     <div class="section-header" style="margin-top:0"><span class="section-title">🎯 Parlay ML + Total</span></div>
-    <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Solo Moneyline y Total (sin Spread), ordenados por EV.</p>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Solo Moneyline y Total (sin Spread), ordenados por edge real.</p>
     <div class="parlay-selector" id="parlay-mltotal-selector">
       <button class="parlay-opt active" data-legs="3"  onclick="selectParlayLegs('mltotal',3)">3 juegos</button>
       <button class="parlay-opt"        data-legs="6"  onclick="selectParlayLegs('mltotal',6)">6 juegos</button>
@@ -526,7 +526,7 @@ function renderCacheInfo(data) {
 // ── DASHBOARD (resumen ejecutivo) ────────────────────────
 // A diferencia de "Todos los Juegos" (listado completo) y "Eficiencia"
 // (filtro por clasificación), el Dashboard no repite esas listas: muestra
-// solo el mejor EV cruzando los 3 mercados por partido, un resumen de los
+// solo el mejor pick (por edge real) cruzando los 3 mercados por partido, un resumen de los
 // parlays disponibles, y warnings — contenido que no está en ninguna otra
 // pestaña.
 function warningsBanner(warnings) {
@@ -589,7 +589,7 @@ function renderDashboard(data) {
   const topEv = allG
     .map((g, idx) => ({ g, idx }))
     .filter(x => x.g.best_market)
-    .sort((a, b) => (b.g.best_market.ev ?? -999) - (a.g.best_market.ev ?? -999))
+    .sort((a, b) => (b.g.best_market.rank_score ?? -999) - (a.g.best_market.rank_score ?? -999))
     .slice(0, 20);
 
   const hasWarnings = data.warnings && data.warnings.length;
@@ -604,8 +604,8 @@ function renderDashboard(data) {
   html += classificationSummary(data);
 
   if (topEv.length) {
-    html += `<div class="section-header"><span class="section-title">🎯 Mejor EV del Día — ML / Spread / Total</span><span class="section-count">${topEv.length}</span></div>`;
-    html += `<p style="font-size:12px;color:var(--muted);margin-bottom:16px">Resumen ejecutivo: el mejor pick de cada partido por EV real, cruzando ML/Spread/Total. Para ver los 3 mercados completos de cada juego, andá a "Todos los Juegos".</p>`;
+    html += `<div class="section-header"><span class="section-title">🎯 Mejor Pick del Día — ML / Spread / Total</span><span class="section-count">${topEv.length}</span></div>`;
+    html += `<p style="font-size:12px;color:var(--muted);margin-bottom:16px">Resumen ejecutivo: el mejor pick de cada partido por edge real, cruzando ML/Spread/Total (el EV% se muestra como referencia). Para ver los 3 mercados completos de cada juego, andá a "Todos los Juegos".</p>`;
     html += `<div class="game-list">${topEv.map((x, rank) => renderTopEvRow(x.g, x.idx, rank + 1)).join('')}</div>`;
   }
 

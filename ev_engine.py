@@ -313,6 +313,26 @@ def safe_ev_edge(fair: float, odds: int) -> tuple[Optional[float], Optional[floa
     edge = round(clamp((fair - imp) * 100, *EDGE_CLAMP), 1)
     return ev, edge
 
+RANKING_BOOKS_FOR_FULL_CONFIDENCE = 4.0
+
+def ranking_edge(sig: dict) -> float:
+    """
+    Metrica para ORDENAR/SELECCIONAR picks, en vez de 'ev' crudo.
+    ev = edge * decimal_odds (identidad exacta de safe_ev_edge): con el
+    mismo edge real, un '+200' muestra el triple de EV% que un '-150' solo
+    por el multiplicador de pago, no porque el pick sea mejor. Rankear por
+    'edge' (puntos de probabilidad) saca ese multiplicador de la ecuacion.
+    Ademas se shrinkea por cantidad de casas de acuerdo (book_count): un
+    edge medido con pocas casas es mas ruido que señal, y ese ruido tiende
+    a concentrarse justo en las cuotas mas extremas que 'ev' ya sobrevalora.
+    'ev' se sigue calculando y mostrando igual, solo deja de ser el criterio
+    de orden/seleccion.
+    """
+    edge = sig.get("edge") or 0.0
+    books = sig.get("book_count") or 0
+    confidence = clamp(books / RANKING_BOOKS_FOR_FULL_CONFIDENCE, 0.0, 1.0)
+    return edge * confidence
+
 def _odds_adjustment(odds: Optional[int]) -> float:
     if odds is None:
         return 0.0
@@ -483,7 +503,7 @@ def spread_signals(game: dict, sport: str) -> list[dict]:
             "fanduel_available": fd_odds is not None,
             "point":             point,
         }))
-    return sorted(signals, key=lambda x: (x.get("ev") or 0, x["validation"], x["probability"]), reverse=True)
+    return sorted(signals, key=lambda x: (ranking_edge(x), x["validation"], x["probability"]), reverse=True)
 
 
 def total_signals(game: dict, sport: str) -> list[dict]:
@@ -526,7 +546,7 @@ def total_signals(game: dict, sport: str) -> list[dict]:
             "fanduel_available": fd_odds is not None,
             "point":             point,
         }))
-    return sorted(signals, key=lambda x: (x.get("ev") or 0, x["validation"], x["probability"]), reverse=True)
+    return sorted(signals, key=lambda x: (ranking_edge(x), x["validation"], x["probability"]), reverse=True)
 
 
 # ---------------------------------------------------------------------------
@@ -547,7 +567,7 @@ def best_market(ml: list, spread: list, total: list) -> Optional[dict]:
         ]
         if not cands:
             return None
-        return max(cands, key=lambda s: s.get("ev") or -999)
+        return max(cands, key=ranking_edge)
 
     candidates = [
         (n, best_of(s)) for n, s in [("Moneyline", ml), ("Spread", spread), ("Total", total)]
@@ -555,11 +575,20 @@ def best_market(ml: list, spread: list, total: list) -> Optional[dict]:
     candidates = [(n, s) for n, s in candidates if s]
     if not candidates:
         return None
-    best_name, best_sig = max(candidates, key=lambda x: x[1].get("ev") or 0)
+    # Comparar por 'ev' crudo entre mercados favorece sistematicamente a
+    # Spread/Total (cuota decimal ~1.9) sobre un ML de favorito fuerte
+    # (cuota decimal 1.3-1.7) aunque el edge real sea equivalente o mejor
+    # en el ML. ranking_edge saca esa distorsion cross-market.
+    best_name, best_sig = max(candidates, key=lambda x: ranking_edge(x[1]))
     return {
         **best_sig,
         "recommended_market": best_name,
         "reason": f"{best_name} — Val {best_sig.get('validation')}% / EV {best_sig.get('ev')}%",
+        # Expuesto para que el front ordene la lista de juegos con el mismo
+        # criterio que se usó acá adentro para elegir el mercado (antes
+        # ordenaba por bm.ev crudo, reintroduciendo el sesgo en el cliente
+        # aunque el backend ya eligiera bien). Ver ranking_edge.
+        "rank_score": ranking_edge(best_sig),
     }
 
 
@@ -605,10 +634,15 @@ def ticket_ok_efficiency(sig: Optional[dict]) -> bool:
         return False
     return True
 
-def ticket_ok_any(sig: Optional[dict]) -> bool:
-    """Sin gate de color/calidad: usado por los parlays 'siempre mostrar
-    todo el mercado por EV' — el color real de cada pick viaja intacto."""
-    return sig is not None
+def ticket_ok_market(sig: Optional[dict]) -> bool:
+    """Piso minimo para parlays que no filtran por color (Mixto, ML+Total):
+    NO exige green/blue (siguen mostrando todo el mercado, no solo picks
+    'curados'), solo bloquea que un pick EVITAR se cuele nada mas porque su
+    cuota alta infla su 'ev' crudo. Mismo piso de validation que usa
+    PROBABLE (ticket_ok_efficiency)."""
+    if not sig:
+        return False
+    return (sig.get("validation") or 0) >= 60
 
 def _market_cap(count: int) -> int:
     """Tope de patas que puede aportar un solo mercado (~2/3 del ticket,
@@ -698,12 +732,14 @@ def group_picks_by_game(picks: list) -> list:
     de otros partidos. Los grupos se ordenan por el mejor EV del par;
     dentro de un grupo se conserva el orden de entrada. Solo cambia el
     orden de visualización, no descarta ni recalcula nada."""
+    # Ordenado por ranking_edge (no 'ev' crudo): evita empujar arriba un
+    # partido solo porque una de sus patas tiene cuota alta.
     groups: dict = {}
     for p in picks:
         groups.setdefault(p.get("game"), []).append(p)
     ordered_games = sorted(
         groups.keys(),
-        key=lambda g: max((x.get("ev") or -999) for x in groups[g]),
+        key=lambda g: max(ranking_edge(x) for x in groups[g]),
         reverse=True,
     )
     return [p for g in ordered_games for p in groups[g]]
@@ -711,8 +747,9 @@ def group_picks_by_game(picks: list) -> list:
 def build_mltotal_ticket(name: str, pool: list, games_target: int, color: str, risk: str, reason: str) -> Optional[dict]:
     """
     A diferencia de build_ticket (arma la lista pata por pata rankeando por
-    EV individual sobre todo el pool), este arma el parlay ML+Total
-    eligiendo PARTIDOS por el mejor EV combinado (ML+Total de ese partido)
+    ranking_edge sobre todo el pool), este arma el parlay ML+Total
+    eligiendo PARTIDOS por el mejor ranking_edge combinado (ML+Total de ese
+    partido, no 'ev' crudo: ver ranking_edge para el porque)
     e incluye siempre AMBAS patas del partido elegido — nunca un partido
     suelto con una sola pata. 'games_target' es el número de PARTIDOS que
     arma el parlay (no patas): cada partido aporta hasta 2 patas (ML+Total),
@@ -727,13 +764,13 @@ def build_mltotal_ticket(name: str, pool: list, games_target: int, color: str, r
         by_market: dict = {}
         for s in sigs:
             m = s.get("market")
-            if m not in by_market or (s.get("ev") or -999) > (by_market[m].get("ev") or -999):
+            if m not in by_market or ranking_edge(s) > ranking_edge(by_market[m]):
                 by_market[m] = s
         return list(by_market.values())
 
     game_legs = {g: best_per_market(sigs) for g, sigs in games.items()}
-    combined_ev = lambda g: sum((l.get("ev") or 0) for l in game_legs[g])
-    ordered_games = sorted(game_legs.keys(), key=combined_ev, reverse=True)
+    combined_rank = lambda g: sum(ranking_edge(l) for l in game_legs[g])
+    ordered_games = sorted(game_legs.keys(), key=combined_rank, reverse=True)
 
     selected_games = ordered_games[:games_target]
     picks = []
@@ -822,7 +859,13 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
             dash["sports"][label] = {"ok": False, "sport_key": key, "error": str(e)}
             dash["warnings"].append(f"{label}: {e}")
 
-    sorter_ev = lambda x: x.get("ev") if x.get("ev") is not None else -999
+    sorter_ev   = lambda x: x.get("ev") if x.get("ev") is not None else -999
+    # Para listas/pools SIN piso de probabilidad (avoid, parlays sin color):
+    # ranking_edge en vez de 'ev' crudo, para que una cuota alta no empuje
+    # arriba un pick solo por el multiplicador de pago (ver ranking_edge).
+    # SÓLIDO/PROBABLE quedan con sorter_ev: ya estan protegidos por el piso
+    # de probabilidad de classify_efficiency, ahi 'ev' no tiene el sesgo.
+    sorter_rank = lambda x: ranking_edge(x)
 
     # Todas las señales del día en un solo pool — base de Eficiencia, Alta
     # Prob y Parlays. No se colapsa a "1 mejor pick por juego": cada
@@ -836,7 +879,7 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
 
     dash["efficiency_green"] = sorted([s for s in all_signals if s.get("color") == "green"], key=sorter_ev, reverse=True)
     dash["efficiency_blue"]  = sorted([s for s in all_signals if s.get("color") == "blue"],  key=sorter_ev, reverse=True)
-    dash["avoid"]            = sorted([s for s in all_signals if s.get("color") == "red"],   key=sorter_ev, reverse=True)
+    dash["avoid"]            = sorted([s for s in all_signals if s.get("color") == "red"],   key=sorter_rank, reverse=True)
 
     # Ticket Eficiencia: producto curado (requiere green/blue), queda
     # deshabilitado en la UI (display:none) pero se mantiene funcional.
@@ -846,25 +889,29 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
         "green", "Bajo", "Picks de alta probabilidad en MLB/NBA/NHL."
     )
 
-    # Parlay Mixto (3/6/10 legs) — ML + Spread + Total, top EV real del día
-    # sin filtrar por color. Solo devuelve None si literalmente no hay 3
-    # juegos distintos con datos hoy (build_ticket ya lo garantiza). El tope
-    # por mercado evita que ML monopolice las patas cuando hay Spread/Total
-    # disponibles (build_ticket cae a EV puro si ese día no hay diversidad real).
-    _parlay_pool = sorted(all_signals, key=sorter_ev, reverse=True)
-    dash["ticket_3"]  = build_ticket("🎯 Parlay Mixto — 3 Legs",  _parlay_pool, 3,  ticket_ok_any, "yellow", "Bajo",  "3 mejores picks del día por EV (ML/Spread/Total).", max_per_market=_market_cap(3))
-    dash["ticket_6"]  = build_ticket("🔥 Parlay Mixto — 6 Legs",  _parlay_pool, 6,  ticket_ok_any, "yellow", "Medio", "6 mejores picks del día por EV (ML/Spread/Total).", max_per_market=_market_cap(6))
-    dash["ticket_10"] = build_ticket("⭐ Parlay Mixto — 10 Legs", _parlay_pool, 10, ticket_ok_any, "yellow", "Alto",  "10 mejores picks del día por EV (ML/Spread/Total).", max_per_market=_market_cap(10))
+    # Parlay Mixto (3/6/10 legs) — ML + Spread + Total, top edge real del
+    # día sin filtrar por color (ticket_ok_market solo pone un piso de
+    # validation, no exige green/blue: sigue mostrando todo el mercado).
+    # Ordenado por ranking_edge, no 'ev' crudo, para que una pata EVITAR no
+    # se cuele solo porque su cuota alta infla el EV%. Solo devuelve None
+    # si literalmente no hay 3 juegos distintos con datos hoy (build_ticket
+    # ya lo garantiza). El tope por mercado evita que ML monopolice las
+    # patas cuando hay Spread/Total disponibles.
+    _parlay_pool = sorted(all_signals, key=sorter_rank, reverse=True)
+    dash["ticket_3"]  = build_ticket("🎯 Parlay Mixto — 3 Legs",  _parlay_pool, 3,  ticket_ok_market, "yellow", "Bajo",  "3 mejores picks del día por edge real (ML/Spread/Total).", max_per_market=_market_cap(3))
+    dash["ticket_6"]  = build_ticket("🔥 Parlay Mixto — 6 Legs",  _parlay_pool, 6,  ticket_ok_market, "yellow", "Medio", "6 mejores picks del día por edge real (ML/Spread/Total).", max_per_market=_market_cap(6))
+    dash["ticket_10"] = build_ticket("⭐ Parlay Mixto — 10 Legs", _parlay_pool, 10, ticket_ok_market, "yellow", "Alto",  "10 mejores picks del día por edge real (ML/Spread/Total).", max_per_market=_market_cap(10))
 
     # Parlay ML + Total (3/6/10 legs) — excluye Spread. Elige PARTIDOS por
-    # el mejor EV combinado (ML+Total de ese partido), no patas sueltas por
-    # EV individual: así siempre entran ambas patas del partido elegido
-    # (build_mltotal_ticket ya lo garantiza, nunca deja un partido con 1 sola
-    # pata salvo que ese día le falte un mercado).
+    # el mejor ranking_edge combinado (ML+Total de ese partido, no 'ev'
+    # crudo: ver build_mltotal_ticket), no patas sueltas por EV individual:
+    # así siempre entran ambas patas del partido elegido (build_mltotal_ticket
+    # ya lo garantiza, nunca deja un partido con 1 sola pata salvo que ese
+    # día le falte un mercado).
     _parlay_pool_mltotal = [s for s in all_signals if s.get("market") != "Spread"]
-    dash["ticket_mltotal_3"]  = build_mltotal_ticket("🎯 Parlay ML+Total — 3 Juegos",  _parlay_pool_mltotal, 3,  "yellow", "Bajo",  "3 mejores juegos del día por EV combinado (ML+Total).")
-    dash["ticket_mltotal_6"]  = build_mltotal_ticket("🔥 Parlay ML+Total — 6 Juegos",  _parlay_pool_mltotal, 6,  "yellow", "Medio", "6 mejores juegos del día por EV combinado (ML+Total).")
-    dash["ticket_mltotal_10"] = build_mltotal_ticket("⭐ Parlay ML+Total — 10 Juegos", _parlay_pool_mltotal, 10, "yellow", "Alto",  "10 mejores juegos del día por EV combinado (ML+Total).")
+    dash["ticket_mltotal_3"]  = build_mltotal_ticket("🎯 Parlay ML+Total — 3 Juegos",  _parlay_pool_mltotal, 3,  "yellow", "Bajo",  "3 mejores juegos del día por edge real combinado (ML+Total).")
+    dash["ticket_mltotal_6"]  = build_mltotal_ticket("🔥 Parlay ML+Total — 6 Juegos",  _parlay_pool_mltotal, 6,  "yellow", "Medio", "6 mejores juegos del día por edge real combinado (ML+Total).")
+    dash["ticket_mltotal_10"] = build_mltotal_ticket("⭐ Parlay ML+Total — 10 Juegos", _parlay_pool_mltotal, 10, "yellow", "Alto",  "10 mejores juegos del día por edge real combinado (ML+Total).")
 
     # Alta Prob: prioriza ≥65% (su propósito); si nada llega hoy, muestra
     # igual el día completo ordenado por probabilidad descendente en vez
