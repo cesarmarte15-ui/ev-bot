@@ -1,0 +1,10 @@
+# pandas pineado <3.0: pybaseball (schedule_and_record) todavia usa un
+# patron de asignacion inplace que pandas 3.0's copy-on-write rompe de forma
+# fatal (ValueError al parsear la columna Attendance). Verificado a mano:
+# pandas 3.0.5 rompe, pandas 2.3.3 funciona (con FutureWarning, no fatal).
+pandas<3.0
+scikit-learn
+pybaseball
+joblib
+pyarrow
+requests

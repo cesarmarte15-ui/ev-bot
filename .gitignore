@@ -2,3 +2,13 @@ __pycache__/
 *.pyc
 .env
 git
+snapshots/
+
+# Pipeline de modelo predictivo MLB (scripts/model/) — datos/artefactos
+# generados localmente, nunca se commitean. Los CSV de referencia chicos
+# (park factors, alias de equipo) SI se commitean, viven en data/reference/.
+scripts/model/data/raw/
+scripts/model/data/processed/
+scripts/model/artifacts/
+scripts/model/logs/
+scripts/model/.venv/

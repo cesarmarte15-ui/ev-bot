@@ -1,0 +1,33 @@
+venue_id,venue_name,team_abbr,park_factor,source_note
+1,Angel Stadium,LAA,0.98,approximate_longrun_reputation
+15,Chase Field,AZ,1.02,approximate_longrun_reputation
+2,Oriole Park at Camden Yards,BAL,0.95,approximate_longrun_reputation_post2022_fences
+3,Fenway Park,BOS,1.04,approximate_longrun_reputation
+17,Wrigley Field,CHC,1.00,approximate_longrun_reputation_wind_variable
+2602,Great American Ball Park,CIN,1.06,approximate_longrun_reputation
+5,Progressive Field,CLE,0.97,approximate_longrun_reputation
+19,Coors Field,COL,1.20,approximate_longrun_reputation_altitude
+2394,Comerica Park,DET,0.97,approximate_longrun_reputation
+2392,Daikin Park,HOU,1.01,approximate_longrun_reputation
+7,Kauffman Stadium,KC,0.98,approximate_longrun_reputation
+22,Dodger Stadium,LAD,0.97,approximate_longrun_reputation
+3309,Nationals Park,WSH,1.00,approximate_longrun_reputation
+3289,Citi Field,NYM,0.96,approximate_longrun_reputation
+2529,Sutter Health Park,ATH,1.05,uncertain_temporary_AAA_park_low_confidence
+10,Oakland Coliseum,OAK,0.95,approximate_longrun_reputation_2023_2024_home
+31,PNC Park,PIT,0.97,approximate_longrun_reputation
+2680,Petco Park,SD,0.95,approximate_longrun_reputation
+680,T-Mobile Park,SEA,0.93,approximate_longrun_reputation
+2395,Oracle Park,SF,0.90,approximate_longrun_reputation
+2889,Busch Stadium,STL,0.97,approximate_longrun_reputation
+12,Tropicana Field,TB,0.96,approximate_longrun_reputation
+2523,George M. Steinbrenner Field,TB,1.05,uncertain_temporary_2025_home_post_hurricane_milton_low_confidence
+5325,Globe Life Field,TEX,1.00,approximate_longrun_reputation
+14,Rogers Centre,TOR,1.02,approximate_longrun_reputation
+3312,Target Field,MIN,0.98,approximate_longrun_reputation
+2681,Citizens Bank Park,PHI,1.05,approximate_longrun_reputation
+4705,Truist Park,ATL,1.01,approximate_longrun_reputation
+4,Rate Field,CWS,1.01,approximate_longrun_reputation
+4169,loanDepot park,MIA,0.92,approximate_longrun_reputation
+3313,Yankee Stadium,NYY,1.03,approximate_longrun_reputation
+32,American Family Field,MIL,1.02,approximate_longrun_reputation
