@@ -14,7 +14,8 @@
     --yellow:#f5c842;--yellow-dim:#3a2900;
     --silver:#94a3b8;--silver-dim:#283447;
     --red:#ef4444;   --red-dim:#5c1111;
-    --radius:10px; --font:'Inter',system-ui,sans-serif;
+    --kelly:#8b7cf6; --kelly-dim:#241c47; --kelly-soft:#5b4fa8;
+    --radius:10px; --font:'Inter',system-ui,sans-serif; --mono:'Courier New',monospace;
   }
   *{box-sizing:border-box;margin:0;padding:0}
   body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh}
@@ -80,16 +81,18 @@
   .parlay-summary-leg{font-size:11px;color:var(--text)}
 
   /* CLASIFICACION DEL DIA — conteo SOLIDO/PROBABLE/EVITAR en el Dashboard */
-  .stat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px}
+  .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;margin-bottom:20px}
   .stat-tile{border:1px solid var(--border);border-radius:var(--radius);padding:14px;
     text-align:center;background:var(--bg2)}
-  .stat-tile.green{border-color:var(--green);background:var(--green-dim)}
-  .stat-tile.blue {border-color:var(--blue); background:var(--blue-dim)}
-  .stat-tile.red  {border-color:var(--red);  background:var(--red-dim)}
+  .stat-tile.green {border-color:var(--green); background:var(--green-dim)}
+  .stat-tile.blue  {border-color:var(--blue);  background:var(--blue-dim)}
+  .stat-tile.yellow{border-color:var(--yellow);background:var(--yellow-dim)}
+  .stat-tile.red   {border-color:var(--red);   background:var(--red-dim)}
   .stat-tile-value{font-size:26px;font-weight:800}
-  .stat-tile.green .stat-tile-value{color:var(--green)}
-  .stat-tile.blue  .stat-tile-value{color:var(--blue)}
-  .stat-tile.red   .stat-tile-value{color:var(--red)}
+  .stat-tile.green  .stat-tile-value{color:var(--green)}
+  .stat-tile.blue   .stat-tile-value{color:var(--blue)}
+  .stat-tile.yellow .stat-tile-value{color:var(--yellow)}
+  .stat-tile.red    .stat-tile-value{color:var(--red)}
   .stat-tile-label{font-size:11px;color:var(--muted);font-weight:700;letter-spacing:.3px;margin-top:4px}
   @media(max-width:600px){.stat-grid{grid-template-columns:1fr}}
 
@@ -274,6 +277,7 @@
     text-align:center;border:2px solid}
   .prob-circle.tier-a{border-color:var(--green);color:var(--green);background:var(--green-dim)}
   .prob-circle.tier-b{border-color:var(--blue); color:var(--blue); background:var(--blue-dim)}
+  .prob-circle.tier-c{border-color:var(--yellow);color:var(--yellow);background:var(--yellow-dim)}
   .prob-circle.tier-neutral{border-color:var(--muted); color:var(--muted); background:var(--bg3)}
   .prob-info{flex:1;min-width:0}
   .prob-sel{font-size:15px;font-weight:700;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -281,10 +285,75 @@
   .prob-bar-wrap{height:3px;background:var(--bg3);border-radius:2px;overflow:hidden}
   .prob-bar-fill{height:100%;border-radius:2px}
   .prob-bar-fill.tier-a{background:var(--green)} .prob-bar-fill.tier-b{background:var(--blue)}
+  .prob-bar-fill.tier-c{background:var(--yellow)}
   .prob-bar-fill.tier-neutral{background:var(--muted)}
   .prob-right{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0}
   .prob-fd-line{font-family:'Courier New',monospace;font-size:11px;color:#38bdf8;text-align:right}
   .prob-badges{display:flex;gap:6px;align-items:center}
+
+  /* RANKING KELLY */
+  .kelly-list{display:flex;flex-direction:column;gap:8px}
+  .kelly-row{display:flex;align-items:center;gap:16px;background:var(--bg2);
+    border:1px solid var(--border);border-radius:var(--radius);padding:13px 16px 13px 12px;
+    border-left:3px solid var(--kelly-soft);transition:border-color .15s}
+  .kelly-row:hover{border-color:#3a4060}
+  .kelly-row.tier-excelente,.kelly-row.tier-fuerte{border-left-color:var(--kelly)}
+  .kelly-row.tier-moderado{border-left-color:var(--kelly-soft)}
+  .kelly-row.tier-leve{border-left-color:#463a7a}
+  .k-rank{width:20px;flex-shrink:0;font-family:var(--mono);font-size:12px;color:var(--muted);text-align:center}
+  .k-main{flex:1;min-width:0}
+  .k-game{font-size:11.5px;color:var(--muted);margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .k-pick{font-size:14.5px;font-weight:700;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .k-mkt{font-size:9.5px;font-weight:700;color:var(--muted);background:var(--bg3);
+    padding:2px 6px;border-radius:4px;letter-spacing:.3px}
+  .k-books{font-size:10.5px;color:var(--muted)}
+  .k-odds{width:64px;flex-shrink:0;font-family:var(--mono);font-weight:800;font-size:14px;text-align:right}
+  .k-odds.pos{color:var(--gold)} .k-odds.neg{color:#94a3b8}
+  .k-score-block{width:140px;flex-shrink:0;display:flex;flex-direction:column;gap:5px}
+  .k-score-top{display:flex;align-items:baseline;gap:6px;justify-content:flex-end}
+  .k-score-num{font-family:var(--mono);font-weight:800;font-size:21px;color:var(--kelly);
+    font-variant-numeric:tabular-nums}
+  .k-score-max{font-size:11px;color:var(--muted)}
+  .k-score-tier{font-size:10px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;text-align:right}
+  .tier-excelente .k-score-tier,.tier-excelente .k-score-num{color:var(--kelly)}
+  .tier-fuerte .k-score-tier,.tier-fuerte .k-score-num{color:#a599f2}
+  .tier-moderado .k-score-tier,.tier-moderado .k-score-num{color:#8479c2}
+  .tier-leve .k-score-tier,.tier-leve .k-score-num{color:#726a9c}
+  .k-gauge{height:6px;border-radius:4px;background:var(--bg3);overflow:hidden}
+  .k-gauge-fill{height:100%;background:linear-gradient(90deg,var(--kelly-soft),var(--kelly))}
+  .k-stake{width:52px;flex-shrink:0;text-align:center;font-size:11px;font-weight:700;
+    padding:5px 0;border-radius:6px;background:var(--kelly-dim);color:#c9bdff}
+  @media(max-width:720px){
+    .kelly-row{flex-wrap:wrap}
+    .k-main{order:1;flex-basis:100%}
+    .k-rank{order:0} .k-odds{order:2} .k-score-block{order:3} .k-stake{order:4} .kelly-row .btn-copy{order:5}
+  }
+  .today-panel{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);
+    padding:26px 22px;display:flex;flex-direction:column;align-items:center;text-align:center;gap:10px}
+  .today-icon{font-size:26px;opacity:.7}
+  .today-title{font-size:14px;font-weight:700}
+  .today-sub{font-size:12.5px;color:var(--muted);max-width:52ch}
+  .nearmiss{margin-top:6px;width:100%;max-width:480px;display:flex;align-items:center;gap:12px;
+    background:var(--bg3);border:1px dashed var(--border);border-radius:var(--radius);
+    padding:10px 14px;opacity:.75}
+  .nearmiss .k-main{text-align:left}
+  .nearmiss .k-score-num{font-size:16px;color:var(--muted)}
+  .nearmiss .kelly-row{background:transparent;border:none;border-left:2px solid var(--border);
+    border-radius:0;padding:0 0 0 10px;width:100%}
+  .formula-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);
+    padding:20px 22px;display:grid;grid-template-columns:1.3fr 1fr;gap:24px;margin-top:20px}
+  @media(max-width:720px){.formula-card{grid-template-columns:1fr}}
+  .formula-title{font-size:12px;font-weight:700;color:var(--kelly);margin-bottom:10px;
+    text-transform:uppercase;letter-spacing:.4px}
+  .formula-line{font-family:var(--mono);font-size:12.5px;color:var(--text);background:var(--bg3);
+    border-radius:6px;padding:9px 11px;margin-bottom:6px;overflow-x:auto;white-space:pre}
+  .formula-note{font-size:11.5px;color:var(--muted);margin-top:8px;line-height:1.6}
+  .stake-table{width:100%;border-collapse:collapse;font-size:12px}
+  .stake-table td{padding:7px 4px;border-bottom:1px solid var(--border)}
+  .stake-table tr:last-child td{border-bottom:none}
+  .stake-table .rng{font-family:var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
+  .stake-table .lbl{font-weight:700}
+  .k-swatch{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:7px}
 
   /* SPORTS TABLE */
   .sports-table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:24px}
@@ -343,6 +412,7 @@
   <button class="tab" onclick="showTab('todos')"      id="tab-todos">📋 Todos los Juegos</button>
   <button class="tab" onclick="showTab('efficiency')" id="tab-efficiency">🔒 Eficiencia</button>
   <button class="tab" onclick="showTab('highprob')"   id="tab-highprob">⭐ Alta Prob</button>
+  <button class="tab" onclick="showTab('kelly')"      id="tab-kelly">🎯 Ranking Kelly</button>
   <button class="tab" onclick="showTab('tickets')"    id="tab-tickets">🎟 Tickets</button>
   <button class="tab" onclick="showTab('debug')"      id="tab-debug">🛠 Debug</button>
 </div>
@@ -381,6 +451,13 @@
     <div class="cards-grid" id="efficiency-blue-grid"></div>
 
     <div class="section-header" style="margin-top:36px">
+      <span class="section-title">🟡 Especulativo</span>
+      <span class="section-count" id="eff-yellow-count">0</span>
+    </div>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Probabilidad moderada (55-58%) pero con edge real positivo — más riesgo que Probable, protegido igual contra el sesgo de cuota alta.</p>
+    <div class="cards-grid" id="efficiency-yellow-grid"></div>
+
+    <div class="section-header" style="margin-top:36px">
       <span class="section-title">⚠ Evitar — Sin valor suficiente</span>
       <span class="section-count" id="avoid-count">0</span>
     </div>
@@ -394,8 +471,43 @@
       <span class="section-title">⭐ Alta Probabilidad — 65%+</span>
       <span class="section-count" id="highprob-count">0</span>
     </div>
-    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">MLB · NBA · NHL — Picks ordenados por probabilidad descendente.</p>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:4px">MLB · NBA · NHL — Picks ordenados por probabilidad descendente.</p>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:16px" id="highprob-goal-note"></p>
     <div class="prob-list" id="highprob-list"></div>
+  </div>
+
+  <!-- RANKING KELLY -->
+  <div class="tab-content" id="content-kelly">
+    <div class="section-header">
+      <span class="section-title">🎯 Ranking Kelly — un pick por partido</span>
+      <span class="section-count" id="kelly-count">0</span>
+    </div>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Un solo score 0–10 por partido (Kelly Criterion: probabilidad real + cuota). Sin EV%/probabilidad sueltos — para el detalle completo de cada mercado, esos números siguen en "Todos los Juegos". Los partidos sin score suficiente no aparecen acá: no se marcan EVITAR, simplemente no están. Tickets/Parlays usan este mismo score.</p>
+
+    <div class="kelly-list" id="kelly-list"></div>
+    <div id="kelly-empty"></div>
+
+    <div class="formula-card">
+      <div>
+        <div class="formula-title">Cómo se calcula</div>
+        <div class="formula-line">score = clamp( kelly_usado × 200, 0, 10 )</div>
+        <div class="formula-line">kelly_usado = kelly_completo × 0.25 × confianza_libros</div>
+        <div class="formula-line">kelly_completo = p − (1−p) / b</div>
+        <div class="formula-line">b = cuota_decimal − 1
+confianza_libros = clamp(casas / 4, 0, 1)</div>
+        <div class="formula-note">p = probabilidad real sin vig. El ×0.25 es Kelly fraccional (full Kelly es demasiado agresivo). confianza_libros reutiliza el mismo shrink que ya usa el ranking por edge en Eficiencia.<br><br>Piso para aparecer: <b>score ≥ 2.0</b>. Tickets/Parlays usan el mismo piso y el mismo score — nunca deberían mostrar un pick que acá no calificaría.</div>
+      </div>
+      <div>
+        <div class="formula-title">Stake sugerido por score</div>
+        <table class="stake-table">
+          <tr><td class="rng"><span class="k-swatch" style="background:var(--kelly)"></span>8.0–10.0</td><td class="lbl">Excelente</td><td>1u</td></tr>
+          <tr><td class="rng"><span class="k-swatch" style="background:#a599f2"></span>6.0–7.9</td><td class="lbl">Fuerte</td><td>0.5u</td></tr>
+          <tr><td class="rng"><span class="k-swatch" style="background:#8479c2"></span>4.0–5.9</td><td class="lbl">Moderado</td><td>0.25u</td></tr>
+          <tr><td class="rng"><span class="k-swatch" style="background:#726a9c"></span>2.0–3.9</td><td class="lbl">Leve</td><td>0.1u</td></tr>
+          <tr><td class="rng"><span class="k-swatch" style="background:var(--bg3);border:1px solid var(--border)"></span>&lt; 2.0</td><td class="lbl" style="color:var(--muted)">—</td><td style="color:var(--muted)">no aparece</td></tr>
+        </table>
+      </div>
+    </div>
   </div>
 
   <!-- TICKETS -->
@@ -479,14 +591,14 @@ function setStatus(state, data) {
   if (state === 'loading') { dot.className = ''; text.textContent = 'Cargando...'; }
   else if (state === 'live') {
     dot.className = 'live';
-    const n = (data.efficiency_green||[]).length + (data.efficiency_blue||[]).length;
+    const n = (data.efficiency_green||[]).length + (data.efficiency_blue||[]).length + (data.efficiency_yellow||[]).length;
     text.textContent = `${n} picks · ${new Date().toLocaleTimeString('es',{hour:'2-digit',minute:'2-digit'})}`;
   } else { dot.className = ''; text.textContent = 'Error'; }
 }
 
 function showLoading() {
   ['top-picks-container','all-games-list','efficiency-green-grid','efficiency-blue-grid',
-   'avoid-grid','highprob-list',
+   'efficiency-yellow-grid','avoid-grid','highprob-list','kelly-list',
    'parlays-container','parlays-mltotal-container','tickets-container','debug-container'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.innerHTML = `<div class="loading-overlay"><div class="loading-spinner"></div> Cargando...</div>`;
@@ -498,10 +610,12 @@ function renderAll(data) {
   renderCacheInfo(data);
   renderDashboard(data);
   renderAllGames(data);
-  renderGrid('efficiency-green-grid', data.efficiency_green || [], 'eff-green-count');
-  renderGrid('efficiency-blue-grid',  data.efficiency_blue  || [], 'eff-blue-count');
+  renderGrid('efficiency-green-grid',  data.efficiency_green  || [], 'eff-green-count');
+  renderGrid('efficiency-blue-grid',   data.efficiency_blue   || [], 'eff-blue-count');
+  renderGrid('efficiency-yellow-grid', data.efficiency_yellow || [], 'eff-yellow-count');
   renderAvoid(data);
   renderHighProb(data);
+  renderKelly(data);
   renderParlays(data);
   renderParlaysMlTotal(data);
   renderTickets(data);
@@ -542,13 +656,15 @@ function warningsBanner(warnings) {
 }
 
 function classificationSummary(data) {
-  const green = (data.efficiency_green || []).length;
-  const blue  = (data.efficiency_blue  || []).length;
-  const red   = (data.avoid            || []).length;
+  const green  = (data.efficiency_green  || []).length;
+  const blue   = (data.efficiency_blue   || []).length;
+  const yellow = (data.efficiency_yellow || []).length;
+  const red    = (data.avoid             || []).length;
   return `
     <div class="stat-grid">
       <div class="stat-tile green"><div class="stat-tile-value">${green}</div><div class="stat-tile-label">🔒 SÓLIDO</div></div>
       <div class="stat-tile blue"><div class="stat-tile-value">${blue}</div><div class="stat-tile-label">📌 PROBABLE</div></div>
+      <div class="stat-tile yellow"><div class="stat-tile-value">${yellow}</div><div class="stat-tile-label">🟡 ESPECULATIVO</div></div>
       <div class="stat-tile red"><div class="stat-tile-value">${red}</div><div class="stat-tile-label">⚠ EVITAR</div></div>
     </div>`;
 }
@@ -988,10 +1104,18 @@ function renderHighProb(data) {
   const picks = data.high_prob || [];
   const list  = document.getElementById('highprob-list');
   const ct    = document.getElementById('highprob-count');
+  const note  = document.getElementById('highprob-goal-note');
   if (ct) ct.textContent = picks.length;
 
+  if (note) {
+    const goal = data.high_prob_goal_count || 0;
+    note.textContent = goal
+      ? `${goal} de ${picks.length} alcanzan el objetivo real de ≥65%. El resto es el mejor disponible hoy, mostrado igual para comparar (revisá el color/etiqueta de cada uno).`
+      : (picks.length ? `Ninguno alcanza hoy el objetivo de ≥65% — se muestra el mejor disponible del día, mayoría probablemente EVITAR.` : '');
+  }
+
   if (!picks.length) {
-    list.innerHTML = `<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-msg">Sin picks con probabilidad ≥65% hoy.</div></div>`;
+    list.innerHTML = `<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-msg">Sin partidos con datos hoy.</div></div>`;
     return;
   }
   list.innerHTML = picks.map((p, i) => {
@@ -999,8 +1123,9 @@ function renderHighProb(data) {
     // El tier del circulo refleja la clasificacion real (color), no solo el
     // numero crudo de probabilidad: reserva verde/azul para SOLIDO/PROBABLE,
     // neutro cuando la clasificacion general es EVITAR (rojo).
-    const tier     = p.color === 'green' ? 'tier-a'
-                    : p.color === 'blue'  ? 'tier-b'
+    const tier     = p.color === 'green'  ? 'tier-a'
+                    : p.color === 'blue'   ? 'tier-b'
+                    : p.color === 'yellow' ? 'tier-c'
                     : 'tier-neutral';
     const probStr  = prob.toFixed(1)+'%';
     const oddsRaw  = p.fanduel_available ? p.fanduel_odds : p.odds;
@@ -1037,6 +1162,69 @@ function renderHighProb(data) {
         </div>
       </div>`;
   }).join('');
+}
+
+// ── RANKING KELLY ─────────────────────────────────────────
+function kellyTierClass(score) {
+  if (score >= 8.0) return 'tier-excelente';
+  if (score >= 6.0) return 'tier-fuerte';
+  if (score >= 4.0) return 'tier-moderado';
+  return 'tier-leve';
+}
+
+function renderKellyRow(p, rank) {
+  const score    = p.kelly_score || 0;
+  const tierCls  = kellyTierClass(score);
+  const oddsRaw  = p.fanduel_available ? p.fanduel_odds : p.odds;
+  const oddsStr  = fmtOdds(oddsRaw) || '--';
+  const mkt      = p.short_market || 'ML';
+  const fdLine   = `${p.selection||''} · ${mkt} · ${oddsStr}`;
+  const books    = p.book_count != null ? `${p.book_count} casas` : '';
+  const rankLbl  = rank != null ? `${rank}` : '—';
+  return `
+    <div class="kelly-row ${tierCls}">
+      <div class="k-rank">${rankLbl}</div>
+      <div class="k-main">
+        <div class="k-game">${p.game||''} · ${p.sport||''}</div>
+        <div class="k-pick">${p.selection||''} <span class="k-mkt">${mkt}</span> <span class="k-books">${books}</span></div>
+      </div>
+      <div class="k-odds ${oddsRaw>0?'pos':'neg'}">${oddsStr}</div>
+      <div class="k-score-block">
+        <div class="k-score-top"><span class="k-score-num">${score.toFixed(1)}</span><span class="k-score-max">/10</span></div>
+        <div class="k-score-tier">${p.kelly_tier||''}</div>
+        <div class="k-gauge"><div class="k-gauge-fill" style="width:${Math.min(score*10,100).toFixed(0)}%"></div></div>
+      </div>
+      <div class="k-stake">${p.kelly_stake||'0u'}</div>
+      <button class="btn-copy" data-pick="${escAttr(fdLine)}" onclick="copyPick(this,this.dataset.pick)">Copiar</button>
+    </div>`;
+}
+
+function renderKelly(data) {
+  const picks = data.kelly_ranking || [];
+  const list  = document.getElementById('kelly-list');
+  const empty = document.getElementById('kelly-empty');
+  const ct    = document.getElementById('kelly-count');
+  if (ct) ct.textContent = picks.length;
+
+  if (picks.length) {
+    list.innerHTML = picks.map((p, i) => renderKellyRow(p, i + 1)).join('');
+    empty.innerHTML = '';
+    return;
+  }
+
+  list.innerHTML = '';
+  const nm = data.kelly_near_miss;
+  if (nm) {
+    empty.innerHTML = `
+      <div class="today-panel">
+        <div class="today-icon">📭</div>
+        <div class="today-title">0 partidos en el ranking hoy</div>
+        <div class="today-sub">Ninguno supera el piso de score 2.0 — día de mercado sin edge real explotable, no un filtro roto.</div>
+        <div class="nearmiss">${renderKellyRow(nm, null)}</div>
+      </div>`;
+  } else {
+    empty.innerHTML = `<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-msg">Sin partidos con datos hoy.</div></div>`;
+  }
 }
 
 // ── DEBUG ─────────────────────────────────────────────────

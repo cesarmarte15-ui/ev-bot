@@ -49,6 +49,16 @@ EFFICIENCY_MAX_ODDS     = -180   # no más caro que -180 en americano para efici
 EFFICIENCY_MIN_EV_GREEN = 0.0    # piso de EV para SÓLIDO
 EFFICIENCY_MIN_EV_BLUE  = -1.0   # piso de EV para PROBABLE
 
+# Piso más bajo antes de EVITAR. Usa 'edge' (puntos de probabilidad), no
+# 'ev' crudo, a propósito: ev = edge * decimal_odds (ver ranking_edge), asi
+# que bajar el piso de EV dejaria entrar picks de cuota alta con edge real
+# bajo/nulo, justo el sesgo que ranking_edge corrige en el ranking. Exigir
+# edge >= 0 mantiene la protección real (nada entra sin ventaja real medida)
+# mientras baja el piso de prob/val para no vaciar Alta Prob en dias de
+# partidos parejos (tipico en MLB).
+EFFICIENCY_MIN_PROB_YELLOW = 55.0
+EFFICIENCY_MIN_VAL_YELLOW  = 58.0
+
 MAX_ODDS_DIFF_PCT = float(os.getenv("MAX_ODDS_DIFF_PCT", "0.06"))
 
 EV_CLAMP    = (-25.0, 25.0)
@@ -333,6 +343,57 @@ def ranking_edge(sig: dict) -> float:
     confidence = clamp(books / RANKING_BOOKS_FOR_FULL_CONFIDENCE, 0.0, 1.0)
     return edge * confidence
 
+# ---------------------------------------------------------------------------
+# Kelly score — criterio único para Ranking Kelly y Tickets/Parlays
+# ---------------------------------------------------------------------------
+KELLY_FRACTION    = 0.25   # Kelly fraccional (1/4): full Kelly apuesta demasiado agresivo
+KELLY_SCORE_SCALE = 200.0  # escala kelly_usado (fraccion de bankroll) a un score 0-10
+KELLY_MIN_SCORE   = 2.0    # piso para aparecer en Ranking Kelly y para admitir una pata en Tickets
+
+def kelly_score(sig: dict) -> float:
+    """
+    Score único 0-10 que combina probabilidad real y cuota (Kelly
+    Criterion) en un solo número, en vez de mostrar EV%/probabilidad
+    sueltos. Usado tanto por la pestaña Ranking Kelly como por el criterio
+    de admisión/orden de Tickets/Parlays — el mismo número en todo el
+    sitio, para que ninguna pestaña de decisión contradiga a otra.
+
+    kelly_completo = p - (1-p)/b            (b = cuota_decimal - 1)
+    kelly_usado    = kelly_completo * KELLY_FRACTION * confianza_libros
+    score          = clamp(kelly_usado * KELLY_SCORE_SCALE, 0, 10)
+
+    confianza_libros reutiliza el mismo shrink que ranking_edge: un edge
+    medido con pocas casas es mas ruido que señal. Constantes son punto de
+    partida (mockup revisado con el usuario), no un resultado calibrado.
+    """
+    prob = sig.get("probability")
+    decimal_odds = sig.get("decimal_odds")
+    if prob is None or decimal_odds is None or decimal_odds <= 1.0:
+        return 0.0
+    p = clamp(prob, 0.0, 100.0) / 100.0
+    b = decimal_odds - 1.0
+    kelly_full = max(p - (1.0 - p) / b, 0.0)
+    books = sig.get("book_count") or 0
+    confidence = clamp(books / RANKING_BOOKS_FOR_FULL_CONFIDENCE, 0.0, 1.0)
+    kelly_used = kelly_full * KELLY_FRACTION * confidence
+    return round(clamp(kelly_used * KELLY_SCORE_SCALE, 0.0, 10.0), 1)
+
+KELLY_TIERS = [
+    (8.0, "Excelente", "1u"),
+    (6.0, "Fuerte",     "0.5u"),
+    (4.0, "Moderado",   "0.25u"),
+    (KELLY_MIN_SCORE, "Leve", "0.1u"),
+]
+
+def kelly_tier(score: float) -> tuple[str, str]:
+    """Etiqueta y stake sugerido para un kelly_score ya calculado. Por
+    debajo de KELLY_MIN_SCORE no hay tier — ese pick no debería estar en
+    ninguna lista filtrada por el piso (Ranking Kelly, Tickets)."""
+    for floor, label, stake in KELLY_TIERS:
+        if score >= floor:
+            return label, stake
+    return "", "0u"
+
 def _odds_adjustment(odds: Optional[int]) -> float:
     if odds is None:
         return 0.0
@@ -357,19 +418,19 @@ def smooth_validation(prob, odds, books, ev=0.0, edge=0.0) -> float:
 # ---------------------------------------------------------------------------
 # Clasificación EFICIENCIA (MLB/NBA/NHL)
 # ---------------------------------------------------------------------------
-def efficiency_failure_reason(prob, val, ev, odds, odds_ok) -> str:
+def efficiency_failure_reason(prob, val, edge, odds, odds_ok) -> str:
     """
-    Detalla contra qué umbral(es) de PROBABLE (el piso más bajo para no caer
-    en EVITAR) falló el pick, para diagnosticar sin tener que inspeccionar
-    prob/val/ev manualmente en cada caso.
+    Detalla contra qué umbral(es) de ESPECULATIVO (el piso más bajo antes de
+    EVITAR) falló el pick, para diagnosticar sin tener que inspeccionar
+    prob/val/edge manualmente en cada caso.
     """
     fails = []
-    if prob < 58:
-        fails.append(f"Prob {prob:.1f}% <58%")
-    if val < 60:
-        fails.append(f"Val {val:.1f} <60")
-    if ev < EFFICIENCY_MIN_EV_BLUE:
-        fails.append(f"EV {ev:.1f}% <{EFFICIENCY_MIN_EV_BLUE:.1f}%")
+    if prob < EFFICIENCY_MIN_PROB_YELLOW:
+        fails.append(f"Prob {prob:.1f}% <{EFFICIENCY_MIN_PROB_YELLOW:.0f}%")
+    if val < EFFICIENCY_MIN_VAL_YELLOW:
+        fails.append(f"Val {val:.1f} <{EFFICIENCY_MIN_VAL_YELLOW:.0f}")
+    if edge < 0:
+        fails.append(f"Edge {edge:.1f} <0 (sin ventaja real, EV% puede ser positivo solo por la cuota)")
     if not odds_ok:
         fails.append(f"Odds {odds} peor que {EFFICIENCY_MAX_ODDS}")
     if not fails:
@@ -388,7 +449,13 @@ def classify_efficiency(prob, val, ev, edge, odds) -> tuple[str, str, str, str]:
     if prob >= 58 and val >= 60 and ev >= EFFICIENCY_MIN_EV_BLUE and odds_ok:
         return "blue", "📌 PROBABLE", "Alta probabilidad pero precio ajustado.", "0.25u"
 
-    reason = efficiency_failure_reason(prob, val, ev, odds, odds_ok)
+    # Piso más bajo antes de EVITAR: exige edge real positivo (no EV% crudo,
+    # que un pick de cuota alta puede inflar sin edge real — ver comentario
+    # de EFFICIENCY_MIN_PROB_YELLOW) a cambio de aceptar menos probabilidad.
+    if prob >= EFFICIENCY_MIN_PROB_YELLOW and val >= EFFICIENCY_MIN_VAL_YELLOW and edge >= 0.0 and odds_ok:
+        return "yellow", "🟡 ESPECULATIVO", "Probabilidad moderada con edge real positivo — mayor riesgo.", "0.1u-0.25u"
+
+    reason = efficiency_failure_reason(prob, val, edge, odds, odds_ok)
     return "red", "⚠ EVITAR", reason, "0u"
 
 # ---------------------------------------------------------------------------
@@ -399,7 +466,9 @@ def confidence_score(v) -> float:
 
 def enrich(sig: dict) -> dict:
     sig["confidence_score"] = confidence_score(sig.get("validation"))
-    sig["is_bet_recommendation"] = sig.get("color") in ("green", "blue")
+    sig["is_bet_recommendation"] = sig.get("color") in ("green", "blue", "yellow")
+    sig["kelly_score"] = kelly_score(sig)
+    sig["kelly_tier"], sig["kelly_stake"] = kelly_tier(sig["kelly_score"])
     return sig
 
 # ---------------------------------------------------------------------------
@@ -612,6 +681,40 @@ def game_prediction_full(game: dict, sport: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Ranking Kelly
+# ---------------------------------------------------------------------------
+def build_kelly_ranking(all_signals: list) -> tuple[list, Optional[dict]]:
+    """
+    Un pick por partido para la pestaña Ranking Kelly: el de mayor
+    kelly_score entre ML/Spread/Total de ese partido. Solo entran los que
+    superan KELLY_MIN_SCORE — por debajo, el partido directamente no
+    aparece en el ranking (no se marca EVITAR, no hay fila para el).
+
+    Si NINGUN partido llega al piso ese dia, devuelve el mas cercano aparte
+    (near_miss) para que la pestaña pueda explicar el vacío en vez de
+    mostrar nada sin contexto.
+    """
+    best_per_game: dict[str, dict] = {}
+    for s in all_signals:
+        game = s.get("game")
+        if game is None:
+            continue
+        score = s.get("kelly_score") or 0.0
+        if game not in best_per_game or score > (best_per_game[game].get("kelly_score") or 0.0):
+            best_per_game[game] = s
+
+    candidates = list(best_per_game.values())
+    ranked = sorted(
+        [s for s in candidates if (s.get("kelly_score") or 0.0) >= KELLY_MIN_SCORE],
+        key=lambda s: s.get("kelly_score") or 0.0,
+        reverse=True,
+    )
+    near_miss = None
+    if not ranked and candidates:
+        near_miss = max(candidates, key=lambda s: s.get("kelly_score") or -999.0)
+    return ranked, near_miss
+
+# ---------------------------------------------------------------------------
 # Tickets
 # ---------------------------------------------------------------------------
 def dedupe(items: list) -> list:
@@ -637,12 +740,13 @@ def ticket_ok_efficiency(sig: Optional[dict]) -> bool:
 def ticket_ok_market(sig: Optional[dict]) -> bool:
     """Piso minimo para parlays que no filtran por color (Mixto, ML+Total):
     NO exige green/blue (siguen mostrando todo el mercado, no solo picks
-    'curados'), solo bloquea que un pick EVITAR se cuele nada mas porque su
-    cuota alta infla su 'ev' crudo. Mismo piso de validation que usa
-    PROBABLE (ticket_ok_efficiency)."""
+    'curados'). Usa el mismo piso KELLY_MIN_SCORE que la pestaña Ranking
+    Kelly a proposito: si un pick no alcanza para aparecer en Ranking
+    Kelly, tampoco puede colarse en un parlay — mismo criterio en todo el
+    sitio, sin picks contradictorios entre pestañas."""
     if not sig:
         return False
-    return (sig.get("validation") or 0) >= 60
+    return (sig.get("kelly_score") or 0.0) >= KELLY_MIN_SCORE
 
 def _market_cap(count: int) -> int:
     """Tope de patas que puede aportar un solo mercado (~2/3 del ticket,
@@ -729,17 +833,15 @@ def build_ticket(name: str, pool: list, count: int, ok_fn, color: str, risk: str
 def group_picks_by_game(picks: list) -> list:
     """Reordena las patas de un ticket para que las de un mismo partido
     queden juntas (una debajo de la otra) en vez de intercaladas con las
-    de otros partidos. Los grupos se ordenan por el mejor EV del par;
-    dentro de un grupo se conserva el orden de entrada. Solo cambia el
-    orden de visualización, no descarta ni recalcula nada."""
-    # Ordenado por ranking_edge (no 'ev' crudo): evita empujar arriba un
-    # partido solo porque una de sus patas tiene cuota alta.
+    de otros partidos. Los grupos se ordenan por el mejor kelly_score del
+    par; dentro de un grupo se conserva el orden de entrada. Solo cambia
+    el orden de visualización, no descarta ni recalcula nada."""
     groups: dict = {}
     for p in picks:
         groups.setdefault(p.get("game"), []).append(p)
     ordered_games = sorted(
         groups.keys(),
-        key=lambda g: max(ranking_edge(x) for x in groups[g]),
+        key=lambda g: max((x.get("kelly_score") or 0.0) for x in groups[g]),
         reverse=True,
     )
     return [p for g in ordered_games for p in groups[g]]
@@ -747,14 +849,16 @@ def group_picks_by_game(picks: list) -> list:
 def build_mltotal_ticket(name: str, pool: list, games_target: int, color: str, risk: str, reason: str) -> Optional[dict]:
     """
     A diferencia de build_ticket (arma la lista pata por pata rankeando por
-    ranking_edge sobre todo el pool), este arma el parlay ML+Total
-    eligiendo PARTIDOS por el mejor ranking_edge combinado (ML+Total de ese
-    partido, no 'ev' crudo: ver ranking_edge para el porque)
+    kelly_score sobre todo el pool), este arma el parlay ML+Total eligiendo
+    PARTIDOS por el mejor kelly_score combinado (ML+Total de ese partido)
     e incluye siempre AMBAS patas del partido elegido — nunca un partido
-    suelto con una sola pata. 'games_target' es el número de PARTIDOS que
-    arma el parlay (no patas): cada partido aporta hasta 2 patas (ML+Total),
-    así que el total de patas del ticket es normalmente 2x games_target
-    (menos si a algún partido elegido le falta uno de los dos mercados hoy).
+    suelto con una sola pata. Solo entran partidos donde al menos una pata
+    supera KELLY_MIN_SCORE: mismo piso que Ranking Kelly y Parlay Mixto,
+    para no mostrar acá un partido que ahí no calificaría.
+    'games_target' es el número de PARTIDOS que arma el parlay (no patas):
+    cada partido aporta hasta 2 patas (ML+Total), así que el total de patas
+    del ticket es normalmente 2x games_target (menos si a algún partido
+    elegido le falta uno de los dos mercados hoy).
     """
     games: dict[str, list] = {}
     for s in pool:
@@ -764,13 +868,17 @@ def build_mltotal_ticket(name: str, pool: list, games_target: int, color: str, r
         by_market: dict = {}
         for s in sigs:
             m = s.get("market")
-            if m not in by_market or ranking_edge(s) > ranking_edge(by_market[m]):
+            if m not in by_market or (s.get("kelly_score") or 0.0) > (by_market[m].get("kelly_score") or 0.0):
                 by_market[m] = s
         return list(by_market.values())
 
     game_legs = {g: best_per_market(sigs) for g, sigs in games.items()}
-    combined_rank = lambda g: sum(ranking_edge(l) for l in game_legs[g])
-    ordered_games = sorted(game_legs.keys(), key=combined_rank, reverse=True)
+    qualifying_games = [
+        g for g, legs in game_legs.items()
+        if max((l.get("kelly_score") or 0.0) for l in legs) >= KELLY_MIN_SCORE
+    ]
+    combined_rank = lambda g: sum((l.get("kelly_score") or 0.0) for l in game_legs[g])
+    ordered_games = sorted(qualifying_games, key=combined_rank, reverse=True)
 
     selected_games = ordered_games[:games_target]
     picks = []
@@ -830,9 +938,15 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
         # (classify_efficiency decide el color, no la visibilidad). Estas
         # listas nunca se filtran ni se vacían por "no hay SÓLIDO/PROBABLE
         # suficiente": siempre muestran el mercado completo, por EV.
-        "efficiency_green": [],
-        "efficiency_blue":  [],
+        "efficiency_green":  [],
+        "efficiency_blue":   [],
+        "efficiency_yellow": [],
         "avoid": [],
+
+        # Ranking Kelly — pestaña nueva en paralelo (ver build_kelly_ranking).
+        # Un pick por partido, solo si supera KELLY_MIN_SCORE.
+        "kelly_ranking":  [],
+        "kelly_near_miss": None,
 
         # Tickets
         "ticket_efficiency": None,
@@ -866,6 +980,10 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
     # SÓLIDO/PROBABLE quedan con sorter_ev: ya estan protegidos por el piso
     # de probabilidad de classify_efficiency, ahi 'ev' no tiene el sesgo.
     sorter_rank = lambda x: ranking_edge(x)
+    # Tickets/Parlays y Ranking Kelly comparten este criterio (ver
+    # kelly_score): el mismo número decide qué aparece y en qué orden en
+    # las dos pestañas, para que no se contradigan entre sí.
+    sorter_kelly = lambda x: x.get("kelly_score") or 0.0
 
     # Todas las señales del día en un solo pool — base de Eficiencia, Alta
     # Prob y Parlays. No se colapsa a "1 mejor pick por juego": cada
@@ -877,9 +995,16 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
                 all_signals.append({**sig, "game": full["game"], "start_time": full["start_time"]})
     all_signals = dedupe(all_signals)
 
-    dash["efficiency_green"] = sorted([s for s in all_signals if s.get("color") == "green"], key=sorter_ev, reverse=True)
-    dash["efficiency_blue"]  = sorted([s for s in all_signals if s.get("color") == "blue"],  key=sorter_ev, reverse=True)
-    dash["avoid"]            = sorted([s for s in all_signals if s.get("color") == "red"],   key=sorter_rank, reverse=True)
+    dash["kelly_ranking"], dash["kelly_near_miss"] = build_kelly_ranking(all_signals)
+
+    dash["efficiency_green"]  = sorted([s for s in all_signals if s.get("color") == "green"],  key=sorter_ev, reverse=True)
+    dash["efficiency_blue"]   = sorted([s for s in all_signals if s.get("color") == "blue"],   key=sorter_ev, reverse=True)
+    # yellow (ESPECULATIVO) ya exige edge>=0 para entrar (ver classify_efficiency),
+    # pero dentro del tier se ordena por ranking_edge igual que avoid: el piso
+    # de probabilidad es mas bajo que green/blue, asi que el sesgo de EV hacia
+    # cuota alta que ranking_edge corrige pesa mas aca en el orden interno.
+    dash["efficiency_yellow"] = sorted([s for s in all_signals if s.get("color") == "yellow"], key=sorter_rank, reverse=True)
+    dash["avoid"]             = sorted([s for s in all_signals if s.get("color") == "red"],    key=sorter_rank, reverse=True)
 
     # Ticket Eficiencia: producto curado (requiere green/blue), queda
     # deshabilitado en la UI (display:none) pero se mantiene funcional.
@@ -889,36 +1014,43 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
         "green", "Bajo", "Picks de alta probabilidad en MLB/NBA/NHL."
     )
 
-    # Parlay Mixto (3/6/10 legs) — ML + Spread + Total, top edge real del
-    # día sin filtrar por color (ticket_ok_market solo pone un piso de
-    # validation, no exige green/blue: sigue mostrando todo el mercado).
-    # Ordenado por ranking_edge, no 'ev' crudo, para que una pata EVITAR no
-    # se cuele solo porque su cuota alta infla el EV%. Solo devuelve None
-    # si literalmente no hay 3 juegos distintos con datos hoy (build_ticket
-    # ya lo garantiza). El tope por mercado evita que ML monopolice las
-    # patas cuando hay Spread/Total disponibles.
-    _parlay_pool = sorted(all_signals, key=sorter_rank, reverse=True)
-    dash["ticket_3"]  = build_ticket("🎯 Parlay Mixto — 3 Legs",  _parlay_pool, 3,  ticket_ok_market, "yellow", "Bajo",  "3 mejores picks del día por edge real (ML/Spread/Total).", max_per_market=_market_cap(3))
-    dash["ticket_6"]  = build_ticket("🔥 Parlay Mixto — 6 Legs",  _parlay_pool, 6,  ticket_ok_market, "yellow", "Medio", "6 mejores picks del día por edge real (ML/Spread/Total).", max_per_market=_market_cap(6))
-    dash["ticket_10"] = build_ticket("⭐ Parlay Mixto — 10 Legs", _parlay_pool, 10, ticket_ok_market, "yellow", "Alto",  "10 mejores picks del día por edge real (ML/Spread/Total).", max_per_market=_market_cap(10))
+    # Parlay Mixto (3/6/10 legs) — ML + Spread + Total, top Score Kelly del
+    # día sin filtrar por color (ticket_ok_market usa el mismo
+    # KELLY_MIN_SCORE que Ranking Kelly, no exige green/blue: sigue
+    # mostrando todo el mercado que califica). Ordenado por kelly_score, el
+    # mismo criterio que Ranking Kelly, para que ninguna de las dos
+    # pestañas contradiga a la otra. Solo devuelve None si literalmente no
+    # hay 3 patas que superen el piso hoy (build_ticket ya lo garantiza).
+    # El tope por mercado evita que ML monopolice las patas cuando hay
+    # Spread/Total disponibles.
+    _parlay_pool = sorted(all_signals, key=sorter_kelly, reverse=True)
+    dash["ticket_3"]  = build_ticket("🎯 Parlay Mixto — 3 Legs",  _parlay_pool, 3,  ticket_ok_market, "yellow", "Bajo",  "3 mejores picks del día por Score Kelly (ML/Spread/Total).", max_per_market=_market_cap(3))
+    dash["ticket_6"]  = build_ticket("🔥 Parlay Mixto — 6 Legs",  _parlay_pool, 6,  ticket_ok_market, "yellow", "Medio", "6 mejores picks del día por Score Kelly (ML/Spread/Total).", max_per_market=_market_cap(6))
+    dash["ticket_10"] = build_ticket("⭐ Parlay Mixto — 10 Legs", _parlay_pool, 10, ticket_ok_market, "yellow", "Alto",  "10 mejores picks del día por Score Kelly (ML/Spread/Total).", max_per_market=_market_cap(10))
 
     # Parlay ML + Total (3/6/10 legs) — excluye Spread. Elige PARTIDOS por
-    # el mejor ranking_edge combinado (ML+Total de ese partido, no 'ev'
-    # crudo: ver build_mltotal_ticket), no patas sueltas por EV individual:
-    # así siempre entran ambas patas del partido elegido (build_mltotal_ticket
-    # ya lo garantiza, nunca deja un partido con 1 sola pata salvo que ese
-    # día le falte un mercado).
+    # el mejor Score Kelly combinado (ML+Total de ese partido, ver
+    # build_mltotal_ticket), no patas sueltas por EV individual: así
+    # siempre entran ambas patas del partido elegido, y solo entran
+    # partidos donde al menos una pata supera KELLY_MIN_SCORE (mismo piso
+    # que Ranking Kelly y Parlay Mixto).
     _parlay_pool_mltotal = [s for s in all_signals if s.get("market") != "Spread"]
-    dash["ticket_mltotal_3"]  = build_mltotal_ticket("🎯 Parlay ML+Total — 3 Juegos",  _parlay_pool_mltotal, 3,  "yellow", "Bajo",  "3 mejores juegos del día por edge real combinado (ML+Total).")
-    dash["ticket_mltotal_6"]  = build_mltotal_ticket("🔥 Parlay ML+Total — 6 Juegos",  _parlay_pool_mltotal, 6,  "yellow", "Medio", "6 mejores juegos del día por edge real combinado (ML+Total).")
-    dash["ticket_mltotal_10"] = build_mltotal_ticket("⭐ Parlay ML+Total — 10 Juegos", _parlay_pool_mltotal, 10, "yellow", "Alto",  "10 mejores juegos del día por edge real combinado (ML+Total).")
+    dash["ticket_mltotal_3"]  = build_mltotal_ticket("🎯 Parlay ML+Total — 3 Juegos",  _parlay_pool_mltotal, 3,  "yellow", "Bajo",  "3 mejores juegos del día por Score Kelly combinado (ML+Total).")
+    dash["ticket_mltotal_6"]  = build_mltotal_ticket("🔥 Parlay ML+Total — 6 Juegos",  _parlay_pool_mltotal, 6,  "yellow", "Medio", "6 mejores juegos del día por Score Kelly combinado (ML+Total).")
+    dash["ticket_mltotal_10"] = build_mltotal_ticket("⭐ Parlay ML+Total — 10 Juegos", _parlay_pool_mltotal, 10, "yellow", "Alto",  "10 mejores juegos del día por Score Kelly combinado (ML+Total).")
 
-    # Alta Prob: prioriza ≥65% (su propósito); si nada llega hoy, muestra
-    # igual el día completo ordenado por probabilidad descendente en vez
-    # de vaciar la pestaña.
+    # Alta Prob: prioriza ≥65% (su propósito), pero nunca vacía la pestaña
+    # por eso. by_prob ya viene ordenado descendente por probabilidad, asi
+    # que los ≥65% (si hay) quedan siempre primero en by_prob[:20] — no hace
+    # falta un fallback aparte. El bug anterior era `(high_prob_65 or
+    # by_prob)[:20]`: si high_prob_65 tenia 1-19 items (no 0), se mostraban
+    # SOLO esos en vez de rellenar hasta 20 con el resto del dia — un dia
+    # con 5 picks ≥65% mostraba 5 en vez de 20. high_prob_goal_count expone
+    # cuantos de los mostrados alcanzan el objetivo real, para que el
+    # frontend distinga "el mejor disponible hoy" de "cumple el objetivo".
     by_prob = sorted(all_signals, key=lambda x: x.get("probability") or 0, reverse=True)
-    high_prob_65 = [p for p in by_prob if (p.get("probability") or 0) >= 65.0]
-    dash["high_prob"] = (high_prob_65 or by_prob)[:20]
+    dash["high_prob"] = by_prob[:20]
+    dash["high_prob_goal_count"] = sum(1 for p in by_prob if (p.get("probability") or 0) >= 65.0)
 
     return dash
 
