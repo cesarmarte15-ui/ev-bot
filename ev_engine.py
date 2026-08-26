@@ -49,15 +49,20 @@ EFFICIENCY_MAX_ODDS     = -180   # no más caro que -180 en americano para efici
 EFFICIENCY_MIN_EV_GREEN = 0.0    # piso de EV para SÓLIDO
 EFFICIENCY_MIN_EV_BLUE  = -1.0   # piso de EV para PROBABLE
 
-# Piso más bajo antes de EVITAR. Usa 'edge' (puntos de probabilidad), no
-# 'ev' crudo, a propósito: ev = edge * decimal_odds (ver ranking_edge), asi
-# que bajar el piso de EV dejaria entrar picks de cuota alta con edge real
-# bajo/nulo, justo el sesgo que ranking_edge corrige en el ranking. Exigir
-# edge >= 0 mantiene la protección real (nada entra sin ventaja real medida)
-# mientras baja el piso de prob/val para no vaciar Alta Prob en dias de
-# partidos parejos (tipico en MLB).
+# Piso más bajo antes de EVITAR. Originalmente exigia edge >= 0 (puntos de
+# probabilidad, no 'ev' crudo) para no reintroducir el sesgo de cuota alta
+# que ranking_edge corrige. Verificado contra 25 capturas reales de
+# produccion (13-25 ago 2026, ~1700 señales): edge >= 0 solo lo cumple
+# ~2.7% de las señales, y combinado con el piso de prob de aca abajo,
+# ~0.24% (0% en las capturas posteriores al fix) — ESPECULATIVO nunca
+# aparecio en la practica. 'edge' compara una fair probability sin vig
+# contra la implicita CON vig del mejor precio, asi que da negativo casi
+# siempre salvo mispricing real entre casas. Se relaja a un piso de EV
+# (EFFICIENCY_MIN_EV_YELLOW), mas laxo que el de PROBABLE ya que este tier
+# ya se anuncia como "mayor riesgo", en vez de exigir edge real positivo.
 EFFICIENCY_MIN_PROB_YELLOW = 55.0
 EFFICIENCY_MIN_VAL_YELLOW  = 58.0
+EFFICIENCY_MIN_EV_YELLOW   = -1.5
 
 MAX_ODDS_DIFF_PCT = float(os.getenv("MAX_ODDS_DIFF_PCT", "0.06"))
 
@@ -348,7 +353,14 @@ def ranking_edge(sig: dict) -> float:
 # ---------------------------------------------------------------------------
 KELLY_FRACTION    = 0.25   # Kelly fraccional (1/4): full Kelly apuesta demasiado agresivo
 KELLY_SCORE_SCALE = 200.0  # escala kelly_usado (fraccion de bankroll) a un score 0-10
-KELLY_MIN_SCORE   = 2.0    # piso para aparecer en Ranking Kelly y para admitir una pata en Tickets
+KELLY_MIN_SCORE   = 0.5    # piso para aparecer en Ranking Kelly y para admitir una pata en Tickets
+# Bajado de 2.0 a 0.5: kelly_full se clampea a 0 cuando no hay edge medible
+# (max(p-(1-p)/b, 0)), y en 25 capturas reales de produccion eso pasa en el
+# ~92% de los dias — ni bajando el piso a 0.1 se rescataban señales mas de
+# 2/25 dias. El piso en si no era el cuello de botella (2.0 exige solo
+# ~4pp de edge real con confianza plena de libros, razonable en terminos
+# de Kelly), pero bajarlo a 0.5 al menos no descarta los dias "casi" que
+# antes se perdian por decimas.
 
 def kelly_score(sig: dict) -> float:
     """
@@ -418,19 +430,19 @@ def smooth_validation(prob, odds, books, ev=0.0, edge=0.0) -> float:
 # ---------------------------------------------------------------------------
 # Clasificación EFICIENCIA (MLB/NBA/NHL)
 # ---------------------------------------------------------------------------
-def efficiency_failure_reason(prob, val, edge, odds, odds_ok) -> str:
+def efficiency_failure_reason(prob, val, ev, odds, odds_ok) -> str:
     """
     Detalla contra qué umbral(es) de ESPECULATIVO (el piso más bajo antes de
     EVITAR) falló el pick, para diagnosticar sin tener que inspeccionar
-    prob/val/edge manualmente en cada caso.
+    prob/val/ev manualmente en cada caso.
     """
     fails = []
     if prob < EFFICIENCY_MIN_PROB_YELLOW:
         fails.append(f"Prob {prob:.1f}% <{EFFICIENCY_MIN_PROB_YELLOW:.0f}%")
     if val < EFFICIENCY_MIN_VAL_YELLOW:
         fails.append(f"Val {val:.1f} <{EFFICIENCY_MIN_VAL_YELLOW:.0f}")
-    if edge < 0:
-        fails.append(f"Edge {edge:.1f} <0 (sin ventaja real, EV% puede ser positivo solo por la cuota)")
+    if ev < EFFICIENCY_MIN_EV_YELLOW:
+        fails.append(f"EV {ev:.1f}% <{EFFICIENCY_MIN_EV_YELLOW:.1f}%")
     if not odds_ok:
         fails.append(f"Odds {odds} peor que {EFFICIENCY_MAX_ODDS}")
     if not fails:
@@ -449,13 +461,14 @@ def classify_efficiency(prob, val, ev, edge, odds) -> tuple[str, str, str, str]:
     if prob >= 58 and val >= 60 and ev >= EFFICIENCY_MIN_EV_BLUE and odds_ok:
         return "blue", "📌 PROBABLE", "Alta probabilidad pero precio ajustado.", "0.25u"
 
-    # Piso más bajo antes de EVITAR: exige edge real positivo (no EV% crudo,
-    # que un pick de cuota alta puede inflar sin edge real — ver comentario
-    # de EFFICIENCY_MIN_PROB_YELLOW) a cambio de aceptar menos probabilidad.
-    if prob >= EFFICIENCY_MIN_PROB_YELLOW and val >= EFFICIENCY_MIN_VAL_YELLOW and edge >= 0.0 and odds_ok:
-        return "yellow", "🟡 ESPECULATIVO", "Probabilidad moderada con edge real positivo — mayor riesgo.", "0.1u-0.25u"
+    # Piso más bajo antes de EVITAR: piso de EV mas laxo que PROBABLE (ver
+    # comentario de EFFICIENCY_MIN_EV_YELLOW) a cambio de aceptar menos
+    # probabilidad — exigir edge real positivo aca dejaba este tier vacio
+    # en la practica (verificado con datos reales de produccion).
+    if prob >= EFFICIENCY_MIN_PROB_YELLOW and val >= EFFICIENCY_MIN_VAL_YELLOW and ev >= EFFICIENCY_MIN_EV_YELLOW and odds_ok:
+        return "yellow", "🟡 ESPECULATIVO", "Probabilidad moderada con valor esperado aceptable — mayor riesgo.", "0.1u-0.25u"
 
-    reason = efficiency_failure_reason(prob, val, edge, odds, odds_ok)
+    reason = efficiency_failure_reason(prob, val, ev, odds, odds_ok)
     return "red", "⚠ EVITAR", reason, "0u"
 
 # ---------------------------------------------------------------------------
@@ -999,10 +1012,11 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
 
     dash["efficiency_green"]  = sorted([s for s in all_signals if s.get("color") == "green"],  key=sorter_ev, reverse=True)
     dash["efficiency_blue"]   = sorted([s for s in all_signals if s.get("color") == "blue"],   key=sorter_ev, reverse=True)
-    # yellow (ESPECULATIVO) ya exige edge>=0 para entrar (ver classify_efficiency),
-    # pero dentro del tier se ordena por ranking_edge igual que avoid: el piso
-    # de probabilidad es mas bajo que green/blue, asi que el sesgo de EV hacia
-    # cuota alta que ranking_edge corrige pesa mas aca en el orden interno.
+    # yellow (ESPECULATIVO) ya exige su propio piso de EV para entrar (ver
+    # EFFICIENCY_MIN_EV_YELLOW en classify_efficiency), pero dentro del tier
+    # se ordena por ranking_edge igual que avoid: el piso de probabilidad es
+    # mas bajo que green/blue, asi que el sesgo de EV hacia cuota alta que
+    # ranking_edge corrige pesa mas aca en el orden interno.
     dash["efficiency_yellow"] = sorted([s for s in all_signals if s.get("color") == "yellow"], key=sorter_rank, reverse=True)
     dash["avoid"]             = sorted([s for s in all_signals if s.get("color") == "red"],    key=sorter_rank, reverse=True)
 
