@@ -46,8 +46,17 @@ CACHE_TTL: int   = int(os.getenv("CACHE_TTL", "900"))
 EFFICIENCY_MIN_PROB     = 60.0   # % mínimo para pick eficiente
 EFFICIENCY_MIN_VAL      = 63.0   # validación mínima
 EFFICIENCY_MAX_ODDS     = -180   # no más caro que -180 en americano para eficiencia
-EFFICIENCY_MIN_EV_GREEN = 0.0    # piso de EV para SÓLIDO
-EFFICIENCY_MIN_EV_BLUE  = -1.0   # piso de EV para PROBABLE
+# Piso para SÓLIDO/PROBABLE en 'edge' (puntos de probabilidad), no 'ev'
+# crudo. classify_efficiency usaba ev >= 0.0 / >= -1.0: mismo sesgo de
+# cuota alta que a29c99f ya corrigio para ranking_edge (ev = edge *
+# decimal_odds, así que una cuota corta de favorito comprime el
+# multiplicador y ev crudo rara vez llega a positivo aunque el edge real
+# sea bueno). Verificado contra 13 dias de capturas reales de produccion
+# (13-26 ago 2026, 1790 señales): prob>=60 y ev>=0 simultaneo, 0 veces en
+# los 13 dias (0 SÓLIDO); con edge en vez de ev crudo el piso deja de
+# estar sesgado contra los favoritos que prob>=60 exige.
+EFFICIENCY_MIN_EDGE_GREEN = -1.0   # piso de edge para SÓLIDO
+EFFICIENCY_MIN_EDGE_BLUE  = -1.5   # piso de edge para PROBABLE
 
 # Piso más bajo antes de EVITAR. Originalmente exigia edge >= 0 (puntos de
 # probabilidad, no 'ev' crudo) para no reintroducir el sesgo de cuota alta
@@ -454,17 +463,17 @@ def classify_efficiency(prob, val, ev, edge, odds) -> tuple[str, str, str, str]:
     edge  = edge or 0.0
     odds_ok = odds is None or odds >= EFFICIENCY_MAX_ODDS
 
-    if (prob >= EFFICIENCY_MIN_PROB and val >= EFFICIENCY_MIN_VAL and ev >= EFFICIENCY_MIN_EV_GREEN
-            and edge >= -0.5 and odds_ok):
+    if (prob >= EFFICIENCY_MIN_PROB and val >= EFFICIENCY_MIN_VAL and edge >= EFFICIENCY_MIN_EDGE_GREEN
+            and odds_ok):
         return "green", "🔒 SÓLIDO", "Favorito con alta probabilidad y buen valor.", "0.5u-1u"
 
-    if prob >= 58 and val >= 60 and ev >= EFFICIENCY_MIN_EV_BLUE and odds_ok:
+    if prob >= 58 and val >= 60 and edge >= EFFICIENCY_MIN_EDGE_BLUE and odds_ok:
         return "blue", "📌 PROBABLE", "Alta probabilidad pero precio ajustado.", "0.25u"
 
-    # Piso más bajo antes de EVITAR: piso de EV mas laxo que PROBABLE (ver
-    # comentario de EFFICIENCY_MIN_EV_YELLOW) a cambio de aceptar menos
-    # probabilidad — exigir edge real positivo aca dejaba este tier vacio
-    # en la practica (verificado con datos reales de produccion).
+    # Piso más bajo antes de EVITAR, todavia en 'ev' crudo (ver comentario
+    # de EFFICIENCY_MIN_EV_YELLOW) a cambio de aceptar menos probabilidad
+    # — exigir edge real positivo aca dejaba este tier vacio en la
+    # practica (verificado con datos reales de produccion).
     if prob >= EFFICIENCY_MIN_PROB_YELLOW and val >= EFFICIENCY_MIN_VAL_YELLOW and ev >= EFFICIENCY_MIN_EV_YELLOW and odds_ok:
         return "yellow", "🟡 ESPECULATIVO", "Probabilidad moderada con valor esperado aceptable — mayor riesgo.", "0.1u-0.25u"
 
@@ -638,7 +647,7 @@ def best_market(ml: list, spread: list, total: list) -> Optional[dict]:
     """
     Elige el mercado con mejor EV real entre ML/Spread/Total, mismas
     compuertas que la clasificación SÓLIDO/PROBABLE (Prob>=58, Val>=60,
-    EV>=piso): solo compite entre picks color green/blue. Si ningún
+    Edge>=piso): solo compite entre picks color green/blue. Si ningún
     mercado del partido pasa las compuertas, no hay recomendación (None)
     en vez de mostrar el menos malo con etiqueta EVITAR contradictoria.
     """
