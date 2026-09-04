@@ -151,6 +151,9 @@
     white-space:nowrap;transition:all .15s}
   .btn-copy:hover{background:#0c1f38}
   .btn-copy.copied{border-color:var(--green);color:var(--green)}
+  .btn-no-copy{flex-shrink:0;font-size:10.5px;font-weight:700;color:var(--muted);
+    border:1px dashed var(--border);border-radius:6px;padding:5px 10px;text-align:center;
+    white-space:nowrap}
 
   /* GAME LIST */
   .game-list{display:flex;flex-direction:column;gap:6px}
@@ -256,6 +259,8 @@
   .ticket-pick-game{font-size:11px;color:var(--muted)}
   .ticket-pick-sel{font-size:13px;font-weight:600}
   .ticket-pick-right{display:flex;align-items:center;gap:8px}
+  .ticket-kelly-badge{font-size:9.5px;font-weight:700;color:#c9bdff;background:var(--kelly-dim);
+    border-radius:5px;padding:2px 6px;white-space:nowrap;text-transform:uppercase;letter-spacing:.2px}
   .ticket-stats{display:flex;gap:16px;margin-top:16px;padding-top:16px;
     border-top:1px solid var(--border);flex-wrap:wrap}
   .ticket-stat{text-align:center}
@@ -323,10 +328,15 @@
   .k-gauge-fill{height:100%;background:linear-gradient(90deg,var(--kelly-soft),var(--kelly))}
   .k-stake{width:52px;flex-shrink:0;text-align:center;font-size:11px;font-weight:700;
     padding:5px 0;border-radius:6px;background:var(--kelly-dim);color:#c9bdff}
+  .kelly-row-disabled{border-left-color:var(--border)!important}
+  .tier-none .k-score-tier,.tier-none .k-score-num{color:var(--muted)}
+  .tier-none .k-gauge-fill{background:var(--border)}
+  .k-no-copy{flex-shrink:0;font-size:10.5px;font-weight:700;color:var(--muted);
+    border:1px dashed var(--border);border-radius:6px;padding:6px 10px;text-align:center;white-space:nowrap}
   @media(max-width:720px){
     .kelly-row{flex-wrap:wrap}
     .k-main{order:1;flex-basis:100%}
-    .k-rank{order:0} .k-odds{order:2} .k-score-block{order:3} .k-stake{order:4} .kelly-row .btn-copy{order:5}
+    .k-rank{order:0} .k-odds{order:2} .k-score-block{order:3} .k-stake{order:4} .kelly-row .btn-copy{order:5} .kelly-row .k-no-copy{order:5}
   }
   .today-panel{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);
     padding:26px 22px;display:flex;flex-direction:column;align-items:center;text-align:center;gap:10px}
@@ -419,9 +429,15 @@
 
 <main>
 
+  <!-- Avisos (ej. un deporte caido) y barra de cache — persistentes en
+       todas las pestañas, no solo en Dashboard: un aviso o una cuota con
+       varios minutos de antigüedad no debería pasar desapercibido solo
+       porque el usuario está parado en otra pestaña. -->
+  <div id="global-warnings"></div>
+  <div id="cache-info"></div>
+
   <!-- DASHBOARD -->
   <div class="tab-content active" id="content-dashboard">
-    <div id="cache-info"></div>
     <div id="top-picks-container"></div>
   </div>
 
@@ -441,7 +457,7 @@
       <span class="section-title">🔒 Sólidos — Alta Probabilidad</span>
       <span class="section-count" id="eff-green-count">0</span>
     </div>
-    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">MLB · NBA · NHL — Favoritos con ≥62% de probabilidad y valor matemático positivo.</p>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">MLB · NBA · NHL — Favoritos con ≥60% de probabilidad y edge real positivo.</p>
     <div class="cards-grid" id="efficiency-green-grid"></div>
 
     <div class="section-header">
@@ -454,7 +470,7 @@
       <span class="section-title">🟡 Especulativo</span>
       <span class="section-count" id="eff-yellow-count">0</span>
     </div>
-    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Probabilidad moderada (55-58%) pero con edge real positivo — más riesgo que Probable, protegido igual contra el sesgo de cuota alta.</p>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Probabilidad moderada (55-58%) con EV esperado aceptable — más riesgo que Probable. A diferencia de Sólido/Probable, este piso usa EV crudo en vez de edge (exigir edge real positivo lo dejaba vacío en la práctica), así que puede favorecer levemente cuotas más altas.</p>
     <div class="cards-grid" id="efficiency-yellow-grid"></div>
 
     <div class="section-header" style="margin-top:36px">
@@ -495,7 +511,7 @@
         <div class="formula-line">kelly_completo = p − (1−p) / b</div>
         <div class="formula-line">b = cuota_decimal − 1
 confianza_libros = clamp(casas / 4, 0, 1)</div>
-        <div class="formula-note">p = probabilidad real sin vig. El ×0.25 es Kelly fraccional (full Kelly es demasiado agresivo). confianza_libros reutiliza el mismo shrink que ya usa el ranking por edge en Eficiencia.<br><br>Piso para aparecer: <b>score ≥ 2.0</b>. Tickets/Parlays usan el mismo piso y el mismo score — nunca deberían mostrar un pick que acá no calificaría.</div>
+        <div class="formula-note">p = probabilidad real sin vig. El ×0.25 es Kelly fraccional (full Kelly es demasiado agresivo). confianza_libros reutiliza el mismo shrink que ya usa el ranking por edge en Eficiencia.<br><br>Piso para aparecer acá: <b>score ≥ 0.5</b>. Tickets/Parlays usan el mismo score pero un piso más estricto (<b>score ≥ 1.5</b> por pata) porque combinan el riesgo de varias patas a la vez — pueden mostrar menos picks que este ranking, nunca más.</div>
       </div>
       <div>
         <div class="formula-title">Stake sugerido por score</div>
@@ -503,8 +519,8 @@ confianza_libros = clamp(casas / 4, 0, 1)</div>
           <tr><td class="rng"><span class="k-swatch" style="background:var(--kelly)"></span>8.0–10.0</td><td class="lbl">Excelente</td><td>1u</td></tr>
           <tr><td class="rng"><span class="k-swatch" style="background:#a599f2"></span>6.0–7.9</td><td class="lbl">Fuerte</td><td>0.5u</td></tr>
           <tr><td class="rng"><span class="k-swatch" style="background:#8479c2"></span>4.0–5.9</td><td class="lbl">Moderado</td><td>0.25u</td></tr>
-          <tr><td class="rng"><span class="k-swatch" style="background:#726a9c"></span>2.0–3.9</td><td class="lbl">Leve</td><td>0.1u</td></tr>
-          <tr><td class="rng"><span class="k-swatch" style="background:var(--bg3);border:1px solid var(--border)"></span>&lt; 2.0</td><td class="lbl" style="color:var(--muted)">—</td><td style="color:var(--muted)">no aparece</td></tr>
+          <tr><td class="rng"><span class="k-swatch" style="background:#726a9c"></span>0.5–3.9</td><td class="lbl">Leve</td><td>0.1u</td></tr>
+          <tr><td class="rng"><span class="k-swatch" style="background:var(--bg3);border:1px solid var(--border)"></span>&lt; 0.5</td><td class="lbl" style="color:var(--muted)">—</td><td style="color:var(--muted)">no aparece</td></tr>
         </table>
       </div>
     </div>
@@ -513,7 +529,7 @@ confianza_libros = clamp(casas / 4, 0, 1)</div>
   <!-- TICKETS -->
   <div class="tab-content" id="content-tickets">
     <div class="section-header"><span class="section-title">🎯 Parlay Mixto</span></div>
-    <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Picks de los 3 mercados (ML · Spread · Total) ordenados por edge real.</p>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Picks de los 3 mercados (ML · Spread · Total) ordenados por Score Kelly (piso ≥1.5 por pata).</p>
     <div class="parlay-selector" id="parlay-mixto-selector">
       <button class="parlay-opt active" data-legs="3"  onclick="selectParlayLegs('mixto',3)">3 patas</button>
       <button class="parlay-opt"        data-legs="6"  onclick="selectParlayLegs('mixto',6)">6 patas</button>
@@ -524,7 +540,7 @@ confianza_libros = clamp(casas / 4, 0, 1)</div>
     <div class="section-divider"></div>
 
     <div class="section-header" style="margin-top:0"><span class="section-title">🎯 Parlay ML + Total</span></div>
-    <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Solo Moneyline y Total (sin Spread), ordenados por edge real.</p>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Solo Moneyline y Total (sin Spread), juegos ordenados por Score Kelly combinado (piso ≥1.5 en al menos una pata).</p>
     <div class="parlay-selector" id="parlay-mltotal-selector">
       <button class="parlay-opt active" data-legs="3"  onclick="selectParlayLegs('mltotal',3)">3 juegos</button>
       <button class="parlay-opt"        data-legs="6"  onclick="selectParlayLegs('mltotal',6)">6 juegos</button>
@@ -575,7 +591,12 @@ async function loadData(forceRefresh = false) {
   showLoading();
   try {
     const url = '/api/dashboard?sports=ALL' + (forceRefresh ? '&refresh=1' : '');
-    dashData = await (await fetch(url)).json();
+    const res  = await fetch(url);
+    const body = await res.json();
+    if (!res.ok) {
+      throw new Error(body?.error || `HTTP ${res.status}`);
+    }
+    dashData = body;
     renderAll(dashData);
     setStatus('live', dashData);
   } catch (e) {
@@ -607,6 +628,8 @@ function showLoading() {
 
 // ── RENDER ALL ────────────────────────────────────────────
 function renderAll(data) {
+  const gw = document.getElementById('global-warnings');
+  if (gw) gw.innerHTML = warningsBanner(data.warnings);
   renderCacheInfo(data);
   renderDashboard(data);
   renderAllGames(data);
@@ -625,13 +648,23 @@ function renderAll(data) {
 // ── CACHE BAR ─────────────────────────────────────────────
 function renderCacheInfo(data) {
   const sports = data.sports || {};
-  const ttls = Object.values(sports).filter(s => s.ok && s.cache_seconds_left).map(s => s.cache_seconds_left);
+  const ttl  = data.cache_ttl_seconds || 900;
+  const ttls = Object.values(sports).filter(s => s.ok && s.cache_seconds_left != null).map(s => s.cache_seconds_left);
+  // minTtl = el que menos tiempo le queda para vencer = el dato mas viejo de
+  // los que se estan mostrando ahora mismo. Mostrar la EDAD (cuanto hace que
+  // se pidieron estas cuotas) en vez del tiempo restante: "Cache: 14m" podia
+  // leerse como "esto tiene 14 minutos" cuando en realidad significaba lo
+  // opuesto (recien pedido, le quedan 14 min de vida).
   const minTtl = ttls.length ? Math.min(...ttls) : null;
+  const ageSec = minTtl != null ? Math.max(0, ttl - minTtl) : null;
+  const ageStr = ageSec == null ? ''
+    : ageSec < 60 ? 'recién actualizadas'
+    : `hasta ${Math.floor(ageSec/60)}m de antigüedad`;
   document.getElementById('cache-info').innerHTML = `
     <div class="cache-bar">
       <span>🕐 ${new Date().toLocaleTimeString('es')}</span>
       <span>📍 ${data.timezone || 'ET'}</span>
-      ${minTtl ? `<span>♻ Cache: ${Math.floor(minTtl/60)}m ${minTtl%60}s</span>` : ''}
+      ${ageStr ? `<span title="Las cuotas se re-piden cada ${Math.floor(ttl/60)} min — hasta entonces, un pick puede mostrar un precio que ya cambió en el book real">♻ Cuotas ${ageStr}</span>` : ''}
       <span>🏆 ${['MLB','NBA','NHL'].filter(k => sports[k]?.ok).length}/3 deportes OK</span>
       <span>📋 ${(data.all_games||[]).length} juegos evaluados</span>
     </div>`;
@@ -716,8 +749,7 @@ function renderDashboard(data) {
     return;
   }
 
-  let html = warningsBanner(data.warnings);
-  html += classificationSummary(data);
+  let html = classificationSummary(data);
 
   if (topEv.length) {
     html += `<div class="section-header"><span class="section-title">🎯 Mejor Pick del Día — ML / Spread / Total</span><span class="section-count">${topEv.length}</span></div>`;
@@ -870,6 +902,10 @@ function renderGameModal(g) {
       const mkt  = p.short_market || p.market || 'ML';
       const pickLine = `${p.selection||''} · ${mkt} · ${odds}`;
       const fdBadge  = p.fanduel_available ? `<span style="font-size:10px;color:#38bdf8;font-weight:700">FD</span>` : '';
+      const copyable = (p.color || 'red') !== 'red';
+      const copyAction = copyable
+        ? `<button class="btn-copy" style="font-size:10px;padding:4px 8px" data-pick="${escAttr(pickLine)}" onclick="copyPick(this,this.dataset.pick)">Copiar</button>`
+        : `<span class="btn-no-copy" style="font-size:9.5px;padding:4px 8px" title="EVITAR — no cumple los criterios mínimos, no es un pick jugable">No jugable</span>`;
       return `
         <div class="modal-pick-row pick-${p.color||'red'}">
           <div class="modal-pick-left">
@@ -880,7 +916,7 @@ function renderGameModal(g) {
             ${fdBadge}
             <span class="odds-badge ${oc}">${odds}</span>
             <span style="font-size:11px;color:var(--muted)">${prob}</span>
-            <button class="btn-copy" style="font-size:10px;padding:4px 8px" data-pick="${escAttr(pickLine)}" onclick="copyPick(this,this.dataset.pick)">Copiar</button>
+            ${copyAction}
           </div>
         </div>`;
     }).join('');
@@ -914,6 +950,7 @@ function fmtOdds(o) {
 
 function renderCard(sig) {
   const color    = sig.color || 'blue';
+  const copyable = color !== 'red';
   const odds     = sig.odds;
   const oddsStr  = fmtOdds(odds) || '--';
   const prob     = sig.probability != null ? sig.probability.toFixed(1)+'%' : '--';
@@ -926,6 +963,9 @@ function renderCard(sig) {
   const fdOddsBlock = sig.fanduel_available
     ? `<span class="odds-badge ${sig.fanduel_odds>0?'odds-pos':'odds-neg'}">${fmtOdds(sig.fanduel_odds)}</span>`
     : `<span class="fd-no-odds">⚠ Sin FD — mejor: ${oddsStr}</span>`;
+  const copyAction = copyable
+    ? `<button class="btn-copy" data-pick="${escAttr(fdPickText)}" onclick="copyPick(this,this.dataset.pick)">Copiar</button>`
+    : `<span class="btn-no-copy" title="EVITAR — no cumple los criterios mínimos, no es un pick jugable">No jugable</span>`;
 
   return `
     <div class="card ${color}">
@@ -943,7 +983,7 @@ function renderCard(sig) {
         </div>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px">
           ${fdOddsBlock}
-          <button class="btn-copy" data-pick="${escAttr(fdPickText)}" onclick="copyPick(this,this.dataset.pick)">Copiar</button>
+          ${copyAction}
         </div>
       </div>
       <div class="card-stats">
@@ -1040,6 +1080,8 @@ function renderTicketPick(p) {
   const fdBadge = p.fanduel_available
     ? `<span style="font-size:10px;color:#38bdf8;font-weight:700">FD</span>`
     : `<span style="font-size:10px;color:#f59e0b" title="Sin FanDuel">⚠</span>`;
+  const kScore  = p.kelly_score != null ? p.kelly_score.toFixed(1) : '--';
+  const kBadge  = `<span class="ticket-kelly-badge" title="Score Kelly de esta pata">${p.kelly_tier||''} · ${kScore}</span>`;
   return `
     <div class="ticket-pick">
       <div class="ticket-pick-left">
@@ -1047,6 +1089,7 @@ function renderTicketPick(p) {
         <div class="ticket-pick-sel">${p.selection||''} · ${mkt}</div>
       </div>
       <div class="ticket-pick-right">
+        ${kBadge}
         ${fdBadge}
         <span class="odds-badge ${oc}">${oddsStr}</span>
         <span style="font-size:12px;color:var(--muted)">${p.probability?.toFixed(1)}%</span>
@@ -1092,6 +1135,7 @@ function renderTicketCard(t, extraClass) {
         <div class="ticket-stat"><div class="ticket-stat-val">${statVal}</div><div class="ticket-stat-lbl">${statLbl}</div></div>
         <div class="ticket-stat"><div class="ticket-stat-val">${t.validation?.toFixed(1)}</div><div class="ticket-stat-lbl">Validación</div></div>
         <div class="ticket-stat"><div class="ticket-stat-val">${t.combined_probability?.toFixed(2)}%</div><div class="ticket-stat-lbl">Prob. Combinada</div></div>
+        <div class="ticket-stat" title="Score Kelly de la pata más débil del parlay — determina el riesgo real del combinado"><div class="ticket-stat-val">${t.min_kelly_score != null ? t.min_kelly_score.toFixed(1) : '--'}</div><div class="ticket-stat-lbl">Calidad (${t.combined_tier || '—'})</div></div>
       </div>
       <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
         <button id="${uid}" class="btn-copy-parlay" onclick="copyParlay(this,${escAttr(JSON.stringify(tPicks))})">📋 Copiar Parlay FanDuel</button>
@@ -1138,6 +1182,10 @@ function renderHighProb(data) {
     const ev = p.ev != null ? (p.ev>0?'+':'')+p.ev.toFixed(1)+'%' : '';
     const pc = p.color || 'blue';
     const lbl = p.label || '';
+    const copyable = pc !== 'red';
+    const copyAction = copyable
+      ? `<button class="btn-copy" data-pick="${escAttr(fdLine)}" onclick="copyPick(this,this.dataset.pick)">Copiar</button>`
+      : `<span class="btn-no-copy" title="EVITAR — no cumple los criterios mínimos, no es un pick jugable">No jugable</span>`;
 
     return `
       <div class="prob-row">
@@ -1158,7 +1206,7 @@ function renderHighProb(data) {
         <div class="prob-right">
           <div class="prob-badges">${fdBadge}<span class="odds-badge ${oddsRaw>0?'odds-pos':'odds-neg'}">${oddsStr}</span></div>
           <div class="prob-fd-line">${fdLine}</div>
-          <button class="btn-copy" data-pick="${escAttr(fdLine)}" onclick="copyPick(this,this.dataset.pick)">Copiar</button>
+          ${copyAction}
         </div>
       </div>`;
   }).join('');
@@ -1172,17 +1220,21 @@ function kellyTierClass(score) {
   return 'tier-leve';
 }
 
-function renderKellyRow(p, rank) {
+function renderKellyRow(p, rank, opts) {
+  const copyable = !opts || opts.copyable !== false;
   const score    = p.kelly_score || 0;
-  const tierCls  = kellyTierClass(score);
+  const tierCls  = copyable ? kellyTierClass(score) : 'tier-none';
   const oddsRaw  = p.fanduel_available ? p.fanduel_odds : p.odds;
   const oddsStr  = fmtOdds(oddsRaw) || '--';
   const mkt      = p.short_market || 'ML';
   const fdLine   = `${p.selection||''} · ${mkt} · ${oddsStr}`;
   const books    = p.book_count != null ? `${p.book_count} casas` : '';
-  const rankLbl  = rank != null ? `${rank}` : '—';
+  const rankLbl  = rank != null ? `${rank}` : (copyable ? '—' : '✕');
+  const action   = copyable
+    ? `<button class="btn-copy" data-pick="${escAttr(fdLine)}" onclick="copyPick(this,this.dataset.pick)">Copiar</button>`
+    : `<span class="k-no-copy" title="No alcanza el piso de score — no es un pick jugable">No juega</span>`;
   return `
-    <div class="kelly-row ${tierCls}">
+    <div class="kelly-row ${tierCls}${copyable?'':' kelly-row-disabled'}">
       <div class="k-rank">${rankLbl}</div>
       <div class="k-main">
         <div class="k-game">${p.game||''} · ${p.sport||''}</div>
@@ -1191,11 +1243,11 @@ function renderKellyRow(p, rank) {
       <div class="k-odds ${oddsRaw>0?'pos':'neg'}">${oddsStr}</div>
       <div class="k-score-block">
         <div class="k-score-top"><span class="k-score-num">${score.toFixed(1)}</span><span class="k-score-max">/10</span></div>
-        <div class="k-score-tier">${p.kelly_tier||''}</div>
+        <div class="k-score-tier">${copyable ? (p.kelly_tier||'') : 'Bajo el piso'}</div>
         <div class="k-gauge"><div class="k-gauge-fill" style="width:${Math.min(score*10,100).toFixed(0)}%"></div></div>
       </div>
-      <div class="k-stake">${p.kelly_stake||'0u'}</div>
-      <button class="btn-copy" data-pick="${escAttr(fdLine)}" onclick="copyPick(this,this.dataset.pick)">Copiar</button>
+      <div class="k-stake">${copyable ? (p.kelly_stake||'0u') : '—'}</div>
+      ${action}
     </div>`;
 }
 
@@ -1220,7 +1272,7 @@ function renderKelly(data) {
         <div class="today-icon">📭</div>
         <div class="today-title">0 partidos en el ranking hoy</div>
         <div class="today-sub">Ninguno supera el piso de score 0.5 — día de mercado sin edge real explotable, no un filtro roto.</div>
-        <div class="nearmiss">${renderKellyRow(nm, null)}</div>
+        <div class="nearmiss">${renderKellyRow(nm, null, {copyable: false})}</div>
       </div>`;
   } else {
     empty.innerHTML = `<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-msg">Sin partidos con datos hoy.</div></div>`;

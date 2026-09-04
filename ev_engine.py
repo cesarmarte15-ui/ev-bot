@@ -73,6 +73,19 @@ EFFICIENCY_MIN_PROB_YELLOW = 55.0
 EFFICIENCY_MIN_VAL_YELLOW  = 58.0
 EFFICIENCY_MIN_EV_YELLOW   = -1.5
 
+# Piso de casas de acuerdo para SÓLIDO/PROBABLE/ESPECULATIVO. Sin esto, un
+# precio de una sola casa (potencialmente un outlier o una línea stale) podía
+# calificar con el mismo peso que un consenso de 9 casas — nada en
+# classify_efficiency exigía corroboración cruzada (a diferencia de Kelly/
+# Tickets, que ya atenúan por book_count via 'confidence'). Verificado contra
+# 32 capturas reales de produccion (13 ago - 1 sep 2026, 1928 señales): el
+# 100% de las señales SÓLIDO/PROBABLE/ESPECULATIVO ya tenian book_count >= 5
+# (nunca bajo 3) — el piso de prob/val/edge ya filtraba indirectamente los
+# mercados finos, asi que este piso no cambia ningun resultado historico,
+# solo cierra el hueco estructural para el dia que si aparezca un precio de
+# una sola casa.
+EFFICIENCY_MIN_BOOKS = 3
+
 MAX_ODDS_DIFF_PCT = float(os.getenv("MAX_ODDS_DIFF_PCT", "0.06"))
 
 EV_CLAMP    = (-25.0, 25.0)
@@ -362,7 +375,7 @@ def ranking_edge(sig: dict) -> float:
 # ---------------------------------------------------------------------------
 KELLY_FRACTION    = 0.25   # Kelly fraccional (1/4): full Kelly apuesta demasiado agresivo
 KELLY_SCORE_SCALE = 200.0  # escala kelly_usado (fraccion de bankroll) a un score 0-10
-KELLY_MIN_SCORE   = 0.5    # piso para aparecer en Ranking Kelly y para admitir una pata en Tickets
+KELLY_MIN_SCORE   = 0.5    # piso para aparecer en Ranking Kelly
 # Bajado de 2.0 a 0.5: kelly_full se clampea a 0 cuando no hay edge medible
 # (max(p-(1-p)/b, 0)), y en 25 capturas reales de produccion eso pasa en el
 # ~92% de los dias — ni bajando el piso a 0.1 se rescataban señales mas de
@@ -370,6 +383,13 @@ KELLY_MIN_SCORE   = 0.5    # piso para aparecer en Ranking Kelly y para admitir 
 # ~4pp de edge real con confianza plena de libros, razonable en terminos
 # de Kelly), pero bajarlo a 0.5 al menos no descarta los dias "casi" que
 # antes se perdian por decimas.
+
+TICKET_MIN_SCORE  = 1.5    # piso para admitir una pata en Tickets/Parlays
+# Mas estricto que KELLY_MIN_SCORE a proposito: un parlay combina el riesgo
+# de todas sus patas (si una falla, se pierde el ticket completo), asi que
+# una pata que apenas justifica un pick individual suelto (0.5) no deberia
+# alcanzar para arrastrar a todo un combinado. Piso propio y separado del
+# de Ranking Kelly — no comparten criterio de admision.
 
 def kelly_score(sig: dict) -> float:
     """
@@ -439,7 +459,7 @@ def smooth_validation(prob, odds, books, ev=0.0, edge=0.0) -> float:
 # ---------------------------------------------------------------------------
 # Clasificación EFICIENCIA (MLB/NBA/NHL)
 # ---------------------------------------------------------------------------
-def efficiency_failure_reason(prob, val, ev, odds, odds_ok) -> str:
+def efficiency_failure_reason(prob, val, ev, odds, odds_ok, books=None, books_ok=True) -> str:
     """
     Detalla contra qué umbral(es) de ESPECULATIVO (el piso más bajo antes de
     EVITAR) falló el pick, para diagnosticar sin tener que inspeccionar
@@ -454,30 +474,34 @@ def efficiency_failure_reason(prob, val, ev, odds, odds_ok) -> str:
         fails.append(f"EV {ev:.1f}% <{EFFICIENCY_MIN_EV_YELLOW:.1f}%")
     if not odds_ok:
         fails.append(f"Odds {odds} peor que {EFFICIENCY_MAX_ODDS}")
+    if not books_ok:
+        fails.append(f"{books} casa(s) <{EFFICIENCY_MIN_BOOKS} — sin corroboracion suficiente")
     if not fails:
         return "No cumple criterios de eficiencia."
     return "Falla: " + " · ".join(fails)
 
-def classify_efficiency(prob, val, ev, edge, odds) -> tuple[str, str, str, str]:
+def classify_efficiency(prob, val, ev, edge, odds, books=None) -> tuple[str, str, str, str]:
     ev    = ev or 0.0
     edge  = edge or 0.0
-    odds_ok = odds is None or odds >= EFFICIENCY_MAX_ODDS
+    odds_ok  = odds is None or odds >= EFFICIENCY_MAX_ODDS
+    books_ok = books is not None and books >= EFFICIENCY_MIN_BOOKS
 
     if (prob >= EFFICIENCY_MIN_PROB and val >= EFFICIENCY_MIN_VAL and edge >= EFFICIENCY_MIN_EDGE_GREEN
-            and odds_ok):
+            and odds_ok and books_ok):
         return "green", "🔒 SÓLIDO", "Favorito con alta probabilidad y buen valor.", "0.5u-1u"
 
-    if prob >= 58 and val >= 60 and edge >= EFFICIENCY_MIN_EDGE_BLUE and odds_ok:
+    if prob >= 58 and val >= 60 and edge >= EFFICIENCY_MIN_EDGE_BLUE and odds_ok and books_ok:
         return "blue", "📌 PROBABLE", "Alta probabilidad pero precio ajustado.", "0.25u"
 
     # Piso más bajo antes de EVITAR, todavia en 'ev' crudo (ver comentario
     # de EFFICIENCY_MIN_EV_YELLOW) a cambio de aceptar menos probabilidad
     # — exigir edge real positivo aca dejaba este tier vacio en la
     # practica (verificado con datos reales de produccion).
-    if prob >= EFFICIENCY_MIN_PROB_YELLOW and val >= EFFICIENCY_MIN_VAL_YELLOW and ev >= EFFICIENCY_MIN_EV_YELLOW and odds_ok:
+    if (prob >= EFFICIENCY_MIN_PROB_YELLOW and val >= EFFICIENCY_MIN_VAL_YELLOW and ev >= EFFICIENCY_MIN_EV_YELLOW
+            and odds_ok and books_ok):
         return "yellow", "🟡 ESPECULATIVO", "Probabilidad moderada con valor esperado aceptable — mayor riesgo.", "0.1u-0.25u"
 
-    reason = efficiency_failure_reason(prob, val, ev, odds, odds_ok)
+    reason = efficiency_failure_reason(prob, val, ev, odds, odds_ok, books, books_ok)
     return "red", "⚠ EVITAR", reason, "0u"
 
 # ---------------------------------------------------------------------------
@@ -508,8 +532,9 @@ def moneyline_efficiency(game: dict, sport: str) -> list[dict]:
         odds  = best["american_odds"]
         prob  = round(clamp(p * 100, *PROB_CLAMP), 1)
         ev, edge = safe_ev_edge(p, odds)
-        val   = smooth_validation(prob, odds, counts.get((name, _point), 0), ev, edge)
-        color, label, reason, stake = classify_efficiency(prob, val, ev, edge, odds)
+        books = counts.get((name, _point), 0)
+        val   = smooth_validation(prob, odds, books, ev, edge)
+        color, label, reason, stake = classify_efficiency(prob, val, ev, edge, odds, books)
 
         fd_odds = fanduel_price(outs, name)
         signals.append(enrich({
@@ -529,7 +554,7 @@ def moneyline_efficiency(game: dict, sport: str) -> list[dict]:
             "odds":              odds,
             "decimal_odds":      best["decimal_odds"],
             "bookmaker":         best["bookmaker"],
-            "book_count":        counts.get((name, _point), 0),
+            "book_count":        books,
             "is_primary":        True,
             "fanduel_odds":      fd_odds,
             "fanduel_available": fd_odds is not None,
@@ -563,8 +588,9 @@ def spread_signals(game: dict, sport: str) -> list[dict]:
         odds  = best["american_odds"]
         prob  = round(clamp(p * 100, *PROB_CLAMP), 1)
         ev, edge = safe_ev_edge(p, odds)
-        val   = smooth_validation(prob, odds, counts.get((name, point), 0), ev, edge)
-        color, label, reason, stake = classify_efficiency(prob, val, ev, edge, odds)
+        books = counts.get((name, point), 0)
+        val   = smooth_validation(prob, odds, books, ev, edge)
+        color, label, reason, stake = classify_efficiency(prob, val, ev, edge, odds, books)
         fd_odds   = fanduel_price(outs, name, point)
         point_str = (f"+{point}" if (point or 0) > 0 else str(point)) if point is not None else ""
         selection = f"{name} {point_str}".strip()
@@ -587,7 +613,7 @@ def spread_signals(game: dict, sport: str) -> list[dict]:
             "odds":              odds,
             "decimal_odds":      best["decimal_odds"],
             "bookmaker":         best["bookmaker"],
-            "book_count":        counts.get((name, point), 0),
+            "book_count":        books,
             "is_primary":        False,
             "is_alt_line":       is_alt,
             "fanduel_odds":      fd_odds,
@@ -610,8 +636,9 @@ def total_signals(game: dict, sport: str) -> list[dict]:
         odds  = best["american_odds"]
         prob  = round(clamp(p * 100, *PROB_CLAMP), 1)
         ev, edge = safe_ev_edge(p, odds)
-        val   = smooth_validation(prob, odds, counts.get((name, point), 0), ev, edge)
-        color, label, reason, stake = classify_efficiency(prob, val, ev, edge, odds)
+        books = counts.get((name, point), 0)
+        val   = smooth_validation(prob, odds, books, ev, edge)
+        color, label, reason, stake = classify_efficiency(prob, val, ev, edge, odds, books)
         fd_odds   = fanduel_price(outs, name, point)
         point_str = str(point) if point is not None else ""
         signals.append(enrich({
@@ -631,7 +658,7 @@ def total_signals(game: dict, sport: str) -> list[dict]:
             "odds":              odds,
             "decimal_odds":      best["decimal_odds"],
             "bookmaker":         best["bookmaker"],
-            "book_count":        counts.get((name, point), 0),
+            "book_count":        books,
             "is_primary":        False,
             "fanduel_odds":      fd_odds,
             "fanduel_available": fd_odds is not None,
@@ -762,13 +789,13 @@ def ticket_ok_efficiency(sig: Optional[dict]) -> bool:
 def ticket_ok_market(sig: Optional[dict]) -> bool:
     """Piso minimo para parlays que no filtran por color (Mixto, ML+Total):
     NO exige green/blue (siguen mostrando todo el mercado, no solo picks
-    'curados'). Usa el mismo piso KELLY_MIN_SCORE que la pestaña Ranking
-    Kelly a proposito: si un pick no alcanza para aparecer en Ranking
-    Kelly, tampoco puede colarse en un parlay — mismo criterio en todo el
-    sitio, sin picks contradictorios entre pestañas."""
+    'curados'). Usa TICKET_MIN_SCORE, mas estricto que el piso de Ranking
+    Kelly a proposito: una pata que combinada en un parlay arrastra el
+    riesgo de todo el ticket necesita mas margen que un pick individual
+    suelto."""
     if not sig:
         return False
-    return (sig.get("kelly_score") or 0.0) >= KELLY_MIN_SCORE
+    return (sig.get("kelly_score") or 0.0) >= TICKET_MIN_SCORE
 
 def _market_cap(count: int) -> int:
     """Tope de patas que puede aportar un solo mercado (~2/3 del ticket,
@@ -834,10 +861,14 @@ def build_ticket(name: str, pool: list, count: int, ok_fn, color: str, risk: str
 
     comb = 1.0
     avg  = 0.0
+    kelly_scores = []
     for x in picks:
         comb *= clamp(x.get("probability", 1) / 100, 0.01, 0.99)
         avg  += x.get("validation", 0)
+        kelly_scores.append(x.get("kelly_score") or 0.0)
     avg /= real_count
+    min_kelly = min(kelly_scores)
+    avg_kelly = sum(kelly_scores) / real_count
 
     return {
         "name":                 dynamic_name,
@@ -850,6 +881,9 @@ def build_ticket(name: str, pool: list, count: int, ok_fn, color: str, risk: str
         "combined_probability": round(clamp(comb * 100, 0.1, 95), 1),
         "risk":                 risk,
         "reason":               dynamic_reason,
+        "min_kelly_score":      round(min_kelly, 1),
+        "avg_kelly_score":      round(avg_kelly, 1),
+        "combined_tier":        kelly_tier(min_kelly)[0],
     }
 
 def group_picks_by_game(picks: list) -> list:
@@ -875,8 +909,8 @@ def build_mltotal_ticket(name: str, pool: list, games_target: int, color: str, r
     PARTIDOS por el mejor kelly_score combinado (ML+Total de ese partido)
     e incluye siempre AMBAS patas del partido elegido — nunca un partido
     suelto con una sola pata. Solo entran partidos donde al menos una pata
-    supera KELLY_MIN_SCORE: mismo piso que Ranking Kelly y Parlay Mixto,
-    para no mostrar acá un partido que ahí no calificaría.
+    supera TICKET_MIN_SCORE: mismo piso que Parlay Mixto, mas estricto que
+    Ranking Kelly porque acá el riesgo de las patas se combina.
     'games_target' es el número de PARTIDOS que arma el parlay (no patas):
     cada partido aporta hasta 2 patas (ML+Total), así que el total de patas
     del ticket es normalmente 2x games_target (menos si a algún partido
@@ -897,7 +931,7 @@ def build_mltotal_ticket(name: str, pool: list, games_target: int, color: str, r
     game_legs = {g: best_per_market(sigs) for g, sigs in games.items()}
     qualifying_games = [
         g for g, legs in game_legs.items()
-        if max((l.get("kelly_score") or 0.0) for l in legs) >= KELLY_MIN_SCORE
+        if max((l.get("kelly_score") or 0.0) for l in legs) >= TICKET_MIN_SCORE
     ]
     combined_rank = lambda g: sum((l.get("kelly_score") or 0.0) for l in game_legs[g])
     ordered_games = sorted(qualifying_games, key=combined_rank, reverse=True)
@@ -924,10 +958,14 @@ def build_mltotal_ticket(name: str, pool: list, games_target: int, color: str, r
 
     comb = 1.0
     avg  = 0.0
+    kelly_scores = []
     for x in picks:
         comb *= clamp(x.get("probability", 1) / 100, 0.01, 0.99)
         avg  += x.get("validation", 0)
+        kelly_scores.append(x.get("kelly_score") or 0.0)
     avg /= legs_count
+    min_kelly = min(kelly_scores)
+    avg_kelly = sum(kelly_scores) / legs_count
 
     return {
         "name":                 dynamic_name,
@@ -941,6 +979,9 @@ def build_mltotal_ticket(name: str, pool: list, games_target: int, color: str, r
         "combined_probability": round(clamp(comb * 100, 0.1, 95), 1),
         "risk":                 risk,
         "reason":               dynamic_reason,
+        "min_kelly_score":      round(min_kelly, 1),
+        "avg_kelly_score":      round(avg_kelly, 1),
+        "combined_tier":        kelly_tier(min_kelly)[0],
     }
 
 # ---------------------------------------------------------------------------
@@ -1038,14 +1079,13 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
     )
 
     # Parlay Mixto (3/6/10 legs) — ML + Spread + Total, top Score Kelly del
-    # día sin filtrar por color (ticket_ok_market usa el mismo
-    # KELLY_MIN_SCORE que Ranking Kelly, no exige green/blue: sigue
-    # mostrando todo el mercado que califica). Ordenado por kelly_score, el
-    # mismo criterio que Ranking Kelly, para que ninguna de las dos
-    # pestañas contradiga a la otra. Solo devuelve None si literalmente no
-    # hay 3 patas que superen el piso hoy (build_ticket ya lo garantiza).
-    # El tope por mercado evita que ML monopolice las patas cuando hay
-    # Spread/Total disponibles.
+    # día sin filtrar por color (ticket_ok_market usa TICKET_MIN_SCORE, mas
+    # estricto que el de Ranking Kelly porque acá el riesgo de las patas se
+    # combina; no exige green/blue: sigue mostrando todo el mercado que
+    # califica). Ordenado por kelly_score. Solo devuelve None si
+    # literalmente no hay 3 patas que superen el piso hoy (build_ticket ya
+    # lo garantiza). El tope por mercado evita que ML monopolice las patas
+    # cuando hay Spread/Total disponibles.
     _parlay_pool = sorted(all_signals, key=sorter_kelly, reverse=True)
     dash["ticket_3"]  = build_ticket("🎯 Parlay Mixto — 3 Legs",  _parlay_pool, 3,  ticket_ok_market, "yellow", "Bajo",  "3 mejores picks del día por Score Kelly (ML/Spread/Total).", max_per_market=_market_cap(3))
     dash["ticket_6"]  = build_ticket("🔥 Parlay Mixto — 6 Legs",  _parlay_pool, 6,  ticket_ok_market, "yellow", "Medio", "6 mejores picks del día por Score Kelly (ML/Spread/Total).", max_per_market=_market_cap(6))
@@ -1055,8 +1095,8 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
     # el mejor Score Kelly combinado (ML+Total de ese partido, ver
     # build_mltotal_ticket), no patas sueltas por EV individual: así
     # siempre entran ambas patas del partido elegido, y solo entran
-    # partidos donde al menos una pata supera KELLY_MIN_SCORE (mismo piso
-    # que Ranking Kelly y Parlay Mixto).
+    # partidos donde al menos una pata supera TICKET_MIN_SCORE (mismo piso
+    # que Parlay Mixto).
     _parlay_pool_mltotal = [s for s in all_signals if s.get("market") != "Spread"]
     dash["ticket_mltotal_3"]  = build_mltotal_ticket("🎯 Parlay ML+Total — 3 Juegos",  _parlay_pool_mltotal, 3,  "yellow", "Bajo",  "3 mejores juegos del día por Score Kelly combinado (ML+Total).")
     dash["ticket_mltotal_6"]  = build_mltotal_ticket("🔥 Parlay ML+Total — 6 Juegos",  _parlay_pool_mltotal, 6,  "yellow", "Medio", "6 mejores juegos del día por Score Kelly combinado (ML+Total).")
