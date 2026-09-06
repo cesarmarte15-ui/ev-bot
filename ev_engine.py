@@ -58,6 +58,21 @@ EFFICIENCY_MAX_ODDS     = -180   # no más caro que -180 en americano para efici
 EFFICIENCY_MIN_EDGE_GREEN = -1.0   # piso de edge para SÓLIDO
 EFFICIENCY_MIN_EDGE_BLUE  = -1.5   # piso de edge para PROBABLE
 
+# Piso de EV real (no edge, no 'validacion') para SÓLIDO/PROBABLE. Hasta acá
+# classify_efficiency no exigia 'ev' para estos dos tiers (solo edge/prob/
+# val), lo que permitia que un favorito con EV negativo pero edge/val altos
+# calificara SÓLIDO mientras un underdog con EV positivo pero prob/val bajos
+# (estructuralmente bajos: 'val' arranca de la probabilidad implicita, que
+# para un underdog nunca es alta) terminaba en EVITAR — exactamente al
+# reves de lo que un bot de Expected Value deberia mostrar. Diagnosticado
+# contra 33 capturas reales de produccion (13 ago - 4 sep 2026): 24 señales
+# de favorito con EV negativo clasificadas SÓLIDO/PROBABLE, 0 de 40 señales
+# de underdog con EV positivo llegaron siquiera a PROBABLE. edge/prob/val
+# se mantienen como compuertas adicionales (corroboracion cruzada, calidad
+# de precio), pero ya no alcanzan por si solas para pisar el EV real.
+EFFICIENCY_MIN_EV_GREEN = 0.0    # SÓLIDO exige EV real >= 0
+EFFICIENCY_MIN_EV_BLUE  = -0.5   # PROBABLE tolera EV levemente negativo (precio ajustado)
+
 # Piso más bajo antes de EVITAR. Originalmente exigia edge >= 0 (puntos de
 # probabilidad, no 'ev' crudo) para no reintroducir el sesgo de cuota alta
 # que ranking_edge corrige. Verificado contra 25 capturas reales de
@@ -384,12 +399,18 @@ KELLY_MIN_SCORE   = 0.5    # piso para aparecer en Ranking Kelly
 # de Kelly), pero bajarlo a 0.5 al menos no descarta los dias "casi" que
 # antes se perdian por decimas.
 
-TICKET_MIN_SCORE  = 1.5    # piso para admitir una pata en Tickets/Parlays
-# Mas estricto que KELLY_MIN_SCORE a proposito: un parlay combina el riesgo
-# de todas sus patas (si una falla, se pierde el ticket completo), asi que
-# una pata que apenas justifica un pick individual suelto (0.5) no deberia
-# alcanzar para arrastrar a todo un combinado. Piso propio y separado del
-# de Ranking Kelly — no comparten criterio de admision.
+TICKET_MIN_SCORE  = 0.6    # piso para admitir una pata en Tickets/Parlays
+# Mas estricto que KELLY_MIN_SCORE (0.5) a proposito: un parlay combina el
+# riesgo de todas sus patas (si una falla, se pierde el ticket completo),
+# asi que una pata que apenas justifica un pick individual suelto no
+# deberia alcanzar para arrastrar a todo un combinado. Piso propio y
+# separado del de Ranking Kelly — no comparten criterio de admision.
+# Bajado de 1.5 a 0.6: verificado contra 33 capturas reales de produccion
+# (13 ago - 4 sep 2026, 2054 señales), el kelly_score MAXIMO observado en
+# todo el periodo fue 0.7 — 1.5 era un piso literalmente inalcanzable con
+# datos reales (0 señales lo cumplieron en 19 dias), no solo estricto. 0.6
+# queda justo debajo de ese techo historico (sigue siendo mas estricto que
+# KELLY_MIN_SCORE) sin ser matematicamente imposible de alcanzar.
 
 def kelly_score(sig: dict) -> float:
     """
@@ -486,11 +507,12 @@ def classify_efficiency(prob, val, ev, edge, odds, books=None) -> tuple[str, str
     odds_ok  = odds is None or odds >= EFFICIENCY_MAX_ODDS
     books_ok = books is not None and books >= EFFICIENCY_MIN_BOOKS
 
-    if (prob >= EFFICIENCY_MIN_PROB and val >= EFFICIENCY_MIN_VAL and edge >= EFFICIENCY_MIN_EDGE_GREEN
-            and odds_ok and books_ok):
+    if (ev >= EFFICIENCY_MIN_EV_GREEN and prob >= EFFICIENCY_MIN_PROB and val >= EFFICIENCY_MIN_VAL
+            and edge >= EFFICIENCY_MIN_EDGE_GREEN and odds_ok and books_ok):
         return "green", "🔒 SÓLIDO", "Favorito con alta probabilidad y buen valor.", "0.5u-1u"
 
-    if prob >= 58 and val >= 60 and edge >= EFFICIENCY_MIN_EDGE_BLUE and odds_ok and books_ok:
+    if (ev >= EFFICIENCY_MIN_EV_BLUE and prob >= 58 and val >= 60 and edge >= EFFICIENCY_MIN_EDGE_BLUE
+            and odds_ok and books_ok):
         return "blue", "📌 PROBABLE", "Alta probabilidad pero precio ajustado.", "0.25u"
 
     # Piso más bajo antes de EVITAR, todavia en 'ev' crudo (ver comentario
@@ -500,6 +522,15 @@ def classify_efficiency(prob, val, ev, edge, odds, books=None) -> tuple[str, str
     if (prob >= EFFICIENCY_MIN_PROB_YELLOW and val >= EFFICIENCY_MIN_VAL_YELLOW and ev >= EFFICIENCY_MIN_EV_YELLOW
             and odds_ok and books_ok):
         return "yellow", "🟡 ESPECULATIVO", "Probabilidad moderada con valor esperado aceptable — mayor riesgo.", "0.1u-0.25u"
+
+    # Salvaguarda: un EV real positivo nunca debe terminar en EVITAR aunque
+    # prob/val (bajos por diseño en un underdog) no lleguen al piso de
+    # ESPECULATIVO — ese es exactamente el bug diagnosticado (underdog con
+    # EV positivo marcado EVITAR). odds_ok/books_ok se mantienen: no son el
+    # sesgo de Validación que se esta corrigiendo, son filtros de calidad de
+    # dato (precio demasiado corto / poca corroboracion entre casas).
+    if ev > 0 and odds_ok and books_ok:
+        return "yellow", "🟡 ESPECULATIVO", f"EV real positivo ({ev:.1f}%) pero no cumple el resto de las compuertas de calidad.", "0.1u"
 
     reason = efficiency_failure_reason(prob, val, ev, odds, odds_ok, books, books_ok)
     return "red", "⚠ EVITAR", reason, "0u"
@@ -670,43 +701,49 @@ def total_signals(game: dict, sport: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 # Predicción completa por juego (v8.5)
 # ---------------------------------------------------------------------------
+_COLOR_TIER_RANK = {"green": 3, "blue": 2, "yellow": 1, "red": 0}
+
+def best_signal_for_game(signals: list) -> Optional[dict]:
+    """
+    Un solo pick representativo por partido entre todos sus mercados (ML/
+    Spread/Total): el de mayor jerarquia de color (verde > azul > amarillo >
+    rojo) y, dentro de la misma jerarquia, el de mejor ranking_edge. Antes
+    ML/Spread/Total de un mismo partido se clasificaban y mostraban de
+    forma independiente, así que el mismo partido podía aparecer en SÓLIDO
+    por su ML y en PROBABLE por su Spread al mismo tiempo (bug diagnosticado
+    en TODAS las secciones de clasificación). Esta función centraliza el
+    criterio de "cuál es EL pick de este partido" para que best_market() y
+    los buckets de get_dashboard() (SÓLIDO/PROBABLE/ESPECULATIVO/EVITAR)
+    nunca puedan volver a divergir entre sí.
+    """
+    cands = [s for s in (signals or []) if s.get("ev") is not None]
+    if not cands:
+        return None
+    best_tier = max(_COLOR_TIER_RANK.get(s.get("color"), 0) for s in cands)
+    top = [s for s in cands if _COLOR_TIER_RANK.get(s.get("color"), 0) == best_tier]
+    return max(top, key=ranking_edge)
+
 def best_market(ml: list, spread: list, total: list) -> Optional[dict]:
     """
-    Elige el mercado con mejor EV real entre ML/Spread/Total, mismas
-    compuertas que la clasificación SÓLIDO/PROBABLE (Prob>=58, Val>=60,
-    Edge>=piso): solo compite entre picks color green/blue. Si ningún
-    mercado del partido pasa las compuertas, no hay recomendación (None)
-    en vez de mostrar el menos malo con etiqueta EVITAR contradictoria.
+    Pick representativo del partido (ver best_signal_for_game) para el
+    resumen ejecutivo "Mejor Pick del Día": solo se muestra si ese pick
+    llega a color green/blue, mismas compuertas que SÓLIDO/PROBABLE. Si el
+    mejor mercado del partido no pasa esas compuertas, no hay recomendación
+    (None) en vez de mostrar el menos malo con etiqueta EVITAR contradictoria.
     """
-    def best_of(signals: list) -> Optional[dict]:
-        cands = [
-            s for s in (signals or [])
-            if s.get("ev") is not None and s.get("color") in ("green", "blue")
-        ]
-        if not cands:
-            return None
-        return max(cands, key=ranking_edge)
-
-    candidates = [
-        (n, best_of(s)) for n, s in [("Moneyline", ml), ("Spread", spread), ("Total", total)]
-    ]
-    candidates = [(n, s) for n, s in candidates if s]
-    if not candidates:
+    best = best_signal_for_game((ml or []) + (spread or []) + (total or []))
+    if not best or best.get("color") not in ("green", "blue"):
         return None
-    # Comparar por 'ev' crudo entre mercados favorece sistematicamente a
-    # Spread/Total (cuota decimal ~1.9) sobre un ML de favorito fuerte
-    # (cuota decimal 1.3-1.7) aunque el edge real sea equivalente o mejor
-    # en el ML. ranking_edge saca esa distorsion cross-market.
-    best_name, best_sig = max(candidates, key=lambda x: ranking_edge(x[1]))
+    market_name = best.get("market")
     return {
-        **best_sig,
-        "recommended_market": best_name,
-        "reason": f"{best_name} — Val {best_sig.get('validation')}% / EV {best_sig.get('ev')}%",
+        **best,
+        "recommended_market": market_name,
+        "reason": f"{market_name} — Val {best.get('validation')}% / EV {best.get('ev')}%",
         # Expuesto para que el front ordene la lista de juegos con el mismo
         # criterio que se usó acá adentro para elegir el mercado (antes
         # ordenaba por bm.ev crudo, reintroduciendo el sesgo en el cliente
         # aunque el backend ya eligiera bien). Ver ranking_edge.
-        "rank_score": ranking_edge(best_sig),
+        "rank_score": ranking_edge(best),
     }
 
 
@@ -847,7 +884,7 @@ def build_ticket(name: str, pool: list, count: int, ok_fn, color: str, risk: str
             take(s)
 
     real_count = len(picks)
-    if real_count < 3:
+    if real_count < 2:
         return None
 
     insufficient = real_count < count
@@ -1060,15 +1097,28 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
 
     dash["kelly_ranking"], dash["kelly_near_miss"] = build_kelly_ranking(all_signals)
 
-    dash["efficiency_green"]  = sorted([s for s in all_signals if s.get("color") == "green"],  key=sorter_ev, reverse=True)
-    dash["efficiency_blue"]   = sorted([s for s in all_signals if s.get("color") == "blue"],   key=sorter_ev, reverse=True)
+    # Un solo pick por partido en SÓLIDO/PROBABLE/ESPECULATIVO/EVITAR (ver
+    # best_signal_for_game): antes cada mercado (ML/Spread/Total) de cada
+    # partido se clasificaba y listaba por separado, así que un mismo
+    # partido podía aparecer repartido entre dos o más de estas secciones a
+    # la vez. Solo estas 4 listas se consolidan — Ranking Kelly, Tickets/
+    # Parlays, "Todos los Juegos" y "Alta Prob" siguen usando all_signals
+    # sin agrupar, tal como antes.
+    signals_by_game: dict = {}
+    for s in all_signals:
+        signals_by_game.setdefault(s.get("game"), []).append(s)
+    game_best = [best_signal_for_game(sigs) for sigs in signals_by_game.values()]
+    game_best = [s for s in game_best if s]
+
+    dash["efficiency_green"]  = sorted([s for s in game_best if s.get("color") == "green"],  key=sorter_ev, reverse=True)
+    dash["efficiency_blue"]   = sorted([s for s in game_best if s.get("color") == "blue"],   key=sorter_ev, reverse=True)
     # yellow (ESPECULATIVO) ya exige su propio piso de EV para entrar (ver
     # EFFICIENCY_MIN_EV_YELLOW en classify_efficiency), pero dentro del tier
     # se ordena por ranking_edge igual que avoid: el piso de probabilidad es
     # mas bajo que green/blue, asi que el sesgo de EV hacia cuota alta que
     # ranking_edge corrige pesa mas aca en el orden interno.
-    dash["efficiency_yellow"] = sorted([s for s in all_signals if s.get("color") == "yellow"], key=sorter_rank, reverse=True)
-    dash["avoid"]             = sorted([s for s in all_signals if s.get("color") == "red"],    key=sorter_rank, reverse=True)
+    dash["efficiency_yellow"] = sorted([s for s in game_best if s.get("color") == "yellow"], key=sorter_rank, reverse=True)
+    dash["avoid"]             = sorted([s for s in game_best if s.get("color") == "red"],    key=sorter_rank, reverse=True)
 
     # Ticket Eficiencia: producto curado (requiere green/blue), queda
     # deshabilitado en la UI (display:none) pero se mantiene funcional.
