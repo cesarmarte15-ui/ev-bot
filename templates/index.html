@@ -103,6 +103,7 @@
   .gold   .card-label{background:var(--gold-dim); color:var(--gold)}
   .silver .card-label{background:var(--silver-dim);color:var(--silver)}
   .red    .card-label{background:var(--red-dim);  color:var(--red)}
+  .card-label-neutral{background:var(--bg3);color:var(--muted)}
   .card-sport{font-size:11px;color:var(--muted);background:var(--bg3);padding:3px 8px;border-radius:6px}
   .card-game{font-size:13px;font-weight:600;margin-bottom:6px;line-height:1.4}
   .card-selection{font-size:15px;font-weight:700;margin-bottom:10px}
@@ -295,7 +296,7 @@
   <!-- TICKETS -->
   <div class="tab-content" id="content-tickets">
     <div class="section-header"><span class="section-title">🎯 Parlay Mixto</span></div>
-    <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Picks de los 3 mercados (ML · Spread · Total) ordenados por Score Kelly (piso ≥1.5 por pata).</p>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Picks de los 3 mercados (ML · Spread · Total) ordenados por Score Kelly (piso ≥0.6 por pata).</p>
     <div class="parlay-selector" id="parlay-mixto-selector">
       <button class="parlay-opt active" data-legs="3"  onclick="selectParlayLegs('mixto',3)">3 patas</button>
       <button class="parlay-opt"        data-legs="6"  onclick="selectParlayLegs('mixto',6)">6 patas</button>
@@ -306,7 +307,7 @@
     <div class="section-divider"></div>
 
     <div class="section-header" style="margin-top:0"><span class="section-title">🎯 Parlay ML + Total</span></div>
-    <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Solo Moneyline y Total (sin Spread), juegos ordenados por Score Kelly combinado (piso ≥1.5 en al menos una pata).</p>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Solo Moneyline y Total (sin Spread), juegos ordenados por Score Kelly combinado (piso ≥0.6 en al menos una pata).</p>
     <div class="parlay-selector" id="parlay-mltotal-selector">
       <button class="parlay-opt active" data-legs="3"  onclick="selectParlayLegs('mltotal',3)">3 juegos</button>
       <button class="parlay-opt"        data-legs="6"  onclick="selectParlayLegs('mltotal',6)">6 juegos</button>
@@ -498,7 +499,7 @@ function renderEdge(data) {
       ? new Date(g.start_time).toLocaleTimeString('es',{hour:'2-digit',minute:'2-digit'}) : '';
     const picks = [g.ml && g.ml[0], g.spread && g.spread[0], g.total && g.total[0]].filter(Boolean);
     const cards = picks.length
-      ? `<div class="cards-grid">${picks.map(renderCard).join('')}</div>`
+      ? `<div class="cards-grid">${picks.map(renderEdgeCard).join('')}</div>`
       : `<div style="font-size:12px;color:var(--muted);padding:8px 0">Sin datos de mercado hoy.</div>`;
     return `
       <div class="edge-game-group">
@@ -578,6 +579,54 @@ function renderCard(sig) {
       <div class="card-footer">
         <span>📚 ${sig.bookmaker||''}</span>
         <span class="card-stake">${sig.stake||'0u'}</span>
+      </div>
+    </div>`;
+}
+
+// Tarjeta neutral para "Apuestas Edge": mismos numeros crudos (prob/val/EV)
+// que renderCard, pero SIN etiqueta de tier (SOLIDO/PROBABLE/EVITAR), sin el
+// mensaje de "Falla: ..." y sin el gate "No jugable" — es informacion para
+// que el usuario decida, no un filtro de apostabilidad (eso vive en
+// "Apuestas EV" via renderCard/classify_efficiency).
+function renderEdgeCard(sig) {
+  const odds     = sig.odds;
+  const oddsStr  = fmtOdds(odds) || '--';
+  const prob     = sig.probability != null ? sig.probability.toFixed(1)+'%' : '--';
+  const val      = sig.validation  != null ? sig.validation.toFixed(1)      : '--';
+  const ev       = sig.ev != null ? (sig.ev>0?'+':'')+sig.ev.toFixed(1)+'%' : '--';
+  const mktName  = sig.market || 'Moneyline';
+  const fdOddsRaw = sig.fanduel_available ? sig.fanduel_odds : odds;
+  const fdOddsStr = fmtOdds(fdOddsRaw) || oddsStr;
+  const fdPickText = `${sig.selection||''} · ${sig.short_market||mktName} · ${fdOddsStr}`;
+  const fdOddsBlock = sig.fanduel_available
+    ? `<span class="odds-badge ${sig.fanduel_odds>0?'odds-pos':'odds-neg'}">${fmtOdds(sig.fanduel_odds)}</span>`
+    : `<span class="fd-no-odds">⚠ Sin FD — mejor: ${oddsStr}</span>`;
+
+  return `
+    <div class="card">
+      <div class="card-top">
+        <span class="card-label card-label-neutral">${sig.short_market || mktName}</span>
+        <span class="card-sport">${sig.sport||''}</span>
+      </div>
+      <div class="card-game">${sig.game||''}</div>
+      <div class="card-selection">${sig.selection||''}</div>
+      <div class="fd-pick">
+        <div>
+          <div class="fd-pick-label">📋 FanDuel Pick</div>
+          <div class="fd-pick-text">${fdPickText}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px">
+          ${fdOddsBlock}
+          <button class="btn-copy" data-pick="${escAttr(fdPickText)}" onclick="copyPick(this,this.dataset.pick)">Copiar</button>
+        </div>
+      </div>
+      <div class="card-stats">
+        <div class="stat"><div class="stat-val">${prob}</div><div class="stat-lbl">Probabilidad</div></div>
+        <div class="stat"><div class="stat-val">${val}</div><div class="stat-lbl">Validación</div></div>
+        <div class="stat"><div class="stat-val">${ev}</div><div class="stat-lbl">EV%</div></div>
+      </div>
+      <div class="card-footer">
+        <span>📚 ${sig.bookmaker||''}</span>
       </div>
     </div>`;
 }
