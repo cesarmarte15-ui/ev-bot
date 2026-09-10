@@ -31,10 +31,9 @@ def api_dashboard():
         logger.error("Dashboard error: %s", e, exc_info=True)
         return jsonify({
             "ok": False, "error": str(e),
-            "sports": {}, "games": [],
-            "efficiency_green": [], "efficiency_blue": [], "efficiency_yellow": [],
-            "green": [], "blue": [], "yellow": [], "red": [],
-            "kelly_ranking": [], "kelly_near_miss": None,
+            "sports": {}, "games": [], "schedule": [],
+            "efficiency_green": [], "efficiency_blue": [],
+            "green": [], "blue": [], "red": [],
             "tickets": [],
         }), 500
 
@@ -48,7 +47,6 @@ def api_efficiency():
             "ok":                True,
             "efficiency_green":  data.get("efficiency_green", []),
             "efficiency_blue":   data.get("efficiency_blue", []),
-            "efficiency_yellow": data.get("efficiency_yellow", []),
             "ticket_efficiency": data.get("ticket_efficiency"),
         })
     except Exception as e:

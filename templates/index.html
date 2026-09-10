@@ -68,30 +68,20 @@
   .parlay-opt.active{background:var(--blue);color:#fff;border-color:var(--blue)}
   .parlay-opt:hover:not(.active){color:var(--text)}
 
-  /* DASHBOARD SUMMARY */
+  /* AVISOS */
   .warnings-banner{display:flex;gap:10px;background:var(--red-dim);border:1px solid var(--red);
     border-radius:var(--radius);padding:12px 14px;margin-bottom:20px}
-  .parlay-summary-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px}
-  .parlay-summary-title{font-size:14px;font-weight:700;margin-bottom:10px}
-  .parlay-summary-row{display:flex;justify-content:space-between;font-size:12px;padding:7px 0;
-    border-bottom:1px solid var(--border);color:var(--muted)}
-  .parlay-summary-row:last-child{border-bottom:none}
-  .parlay-summary-legs{display:flex;flex-direction:column;gap:3px;margin-bottom:8px;
-    padding-bottom:8px;border-bottom:1px dashed var(--border)}
-  .parlay-summary-leg{font-size:11px;color:var(--text)}
 
-  /* CLASIFICACION DEL DIA — conteo SOLIDO/PROBABLE/EVITAR en el Dashboard */
+  /* CLASIFICACION DEL DIA — conteo SOLIDO/PROBABLE/EVITAR en Apuestas EV */
   .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;margin-bottom:20px}
   .stat-tile{border:1px solid var(--border);border-radius:var(--radius);padding:14px;
     text-align:center;background:var(--bg2)}
   .stat-tile.green {border-color:var(--green); background:var(--green-dim)}
   .stat-tile.blue  {border-color:var(--blue);  background:var(--blue-dim)}
-  .stat-tile.yellow{border-color:var(--yellow);background:var(--yellow-dim)}
   .stat-tile.red   {border-color:var(--red);   background:var(--red-dim)}
   .stat-tile-value{font-size:26px;font-weight:800}
   .stat-tile.green  .stat-tile-value{color:var(--green)}
   .stat-tile.blue   .stat-tile-value{color:var(--blue)}
-  .stat-tile.yellow .stat-tile-value{color:var(--yellow)}
   .stat-tile.red    .stat-tile-value{color:var(--red)}
   .stat-tile-label{font-size:11px;color:var(--muted);font-weight:700;letter-spacing:.3px;margin-top:4px}
   @media(max-width:600px){.stat-grid{grid-template-columns:1fr}}
@@ -106,7 +96,6 @@
   .card.gold  {border-left:3px solid var(--gold)}
   .card.silver{border-left:3px solid var(--silver)}
   .card.red   {border-left:3px solid var(--red);opacity:.75}
-  .card.yellow{border-left:3px solid var(--yellow)}
   .card-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;gap:8px}
   .card-label{font-size:11px;font-weight:700;padding:3px 8px;border-radius:6px;white-space:nowrap}
   .green  .card-label{background:var(--green-dim);color:var(--green)}
@@ -114,14 +103,6 @@
   .gold   .card-label{background:var(--gold-dim); color:var(--gold)}
   .silver .card-label{background:var(--silver-dim);color:var(--silver)}
   .red    .card-label{background:var(--red-dim);  color:var(--red)}
-  .yellow .card-label{background:var(--yellow-dim);color:var(--yellow)}
-  /* standalone label (outside .card context) */
-  .lbl-green {background:var(--green-dim);color:var(--green)}
-  .lbl-blue  {background:var(--blue-dim); color:var(--blue)}
-  .lbl-gold  {background:var(--gold-dim); color:var(--gold)}
-  .lbl-silver{background:var(--silver-dim);color:var(--silver)}
-  .lbl-red   {background:var(--red-dim);  color:var(--red)}
-  .lbl-yellow{background:var(--yellow-dim);color:var(--yellow)}
   .card-sport{font-size:11px;color:var(--muted);background:var(--bg3);padding:3px 8px;border-radius:6px}
   .card-game{font-size:13px;font-weight:600;margin-bottom:6px;line-height:1.4}
   .card-selection{font-size:15px;font-weight:700;margin-bottom:10px}
@@ -165,75 +146,8 @@
   .game-row-name{font-size:13px;font-weight:600;margin-bottom:3px;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .game-row-sub{font-size:11px;color:var(--muted);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-  .game-row-markets{display:flex;gap:4px;flex-shrink:0}
-  .mkt-dot{font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px;letter-spacing:.3px}
-  .mkt-dot.green {background:var(--green-dim);color:var(--green)}
-  .mkt-dot.blue  {background:var(--blue-dim); color:var(--blue)}
-  .mkt-dot.gold  {background:var(--gold-dim); color:var(--gold)}
-  .mkt-dot.red   {background:var(--red-dim);  color:var(--red)}
-  .mkt-dot.yellow{background:var(--yellow-dim);color:var(--yellow)}
-  .mkt-dot.none  {background:var(--bg3);color:var(--muted);opacity:.4}
-  .game-row-right{display:flex;align-items:center;gap:8px;flex-shrink:0}
-  .market-pill{font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;border:1px solid;white-space:nowrap}
-  .market-pill.green {background:var(--green-dim);color:var(--green);border-color:var(--green)}
-  .market-pill.blue  {background:var(--blue-dim); color:var(--blue); border-color:var(--blue)}
-  .market-pill.gold  {background:var(--gold-dim); color:var(--gold); border-color:var(--gold)}
-  .market-pill.red   {background:var(--red-dim);  color:var(--red);  border-color:var(--red)}
-  .market-pill.yellow{background:var(--yellow-dim);color:var(--yellow);border-color:var(--yellow)}
-  .market-pill.muted {background:var(--bg3);color:var(--muted);border-color:var(--border)}
-
-  /* TOP EV ROW — resumen ejecutivo del Dashboard, mas compacto y sin el
-     detalle por mercado que ya muestra "Todos los Juegos" (diferenciacion). */
-  .top-ev-row{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);
-    padding:9px 14px;cursor:pointer;display:flex;align-items:center;gap:12px;
-    transition:border-color .15s,background .15s}
-  .top-ev-row:hover{border-color:#3a4060;background:var(--bg3)}
-  .top-ev-rank{font-size:12px;font-weight:800;color:var(--muted);min-width:20px;text-align:center;flex-shrink:0}
-  .top-ev-main{flex:1;min-width:0;display:flex;align-items:baseline;gap:8px}
-  .top-ev-name{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .top-ev-pick{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .top-ev-right{display:flex;align-items:center;gap:8px;flex-shrink:0}
-  .top-ev-ev{font-size:12px;font-weight:800;min-width:52px;text-align:right}
-  .top-ev-ev.pos{color:var(--green)} .top-ev-ev.neg{color:var(--red)}
-
-  /* MODAL */
-  .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:1000;
-    display:none;align-items:center;justify-content:center;padding:16px}
-  .modal-overlay.open{display:flex}
-  .modal{background:var(--bg2);border:1px solid var(--border);border-radius:14px;
-    width:100%;max-width:680px;max-height:88vh;overflow-y:auto;padding:24px}
-  .modal-header{display:flex;justify-content:space-between;align-items:flex-start;
-    margin-bottom:16px;gap:12px}
-  .modal-title{font-size:16px;font-weight:700;line-height:1.3}
-  .modal-close{background:transparent;border:1px solid var(--border);color:var(--muted);
-    width:32px;height:32px;border-radius:8px;cursor:pointer;font-size:15px;flex-shrink:0;
-    display:flex;align-items:center;justify-content:center;transition:all .15s}
-  .modal-close:hover{color:var(--text);border-color:#3a4060}
-  .best-market-banner{display:flex;align-items:flex-start;gap:12px;border-radius:8px;
-    padding:12px 14px;margin-bottom:16px;border:1px solid}
-  .best-market-banner.green{background:var(--green-dim);border-color:var(--green)}
-  .best-market-banner.blue {background:var(--blue-dim); border-color:var(--blue)}
-  .best-market-banner.gold {background:var(--gold-dim); border-color:var(--gold)}
-  .best-market-banner.red  {background:var(--red-dim);  border-color:var(--red)}
-  .best-market-banner.yellow{background:var(--yellow-dim);border-color:var(--yellow)}
-  .modal-markets{display:flex;flex-direction:column;gap:10px}
-  .modal-market-section{background:var(--bg3);border-radius:var(--radius);
-    overflow:hidden;border:1px solid var(--border)}
-  .modal-market-label{font-size:11px;font-weight:700;text-transform:uppercase;
-    letter-spacing:.5px;padding:8px 14px;color:var(--muted);background:var(--bg);
-    border-bottom:1px solid var(--border)}
-  .modal-pick-row{display:flex;align-items:center;justify-content:space-between;
-    padding:11px 14px;border-bottom:1px solid var(--border);gap:10px}
-  .modal-pick-row:last-child{border-bottom:none}
-  .modal-pick-row.pick-green{border-left:3px solid var(--green)}
-  .modal-pick-row.pick-blue {border-left:3px solid var(--blue)}
-  .modal-pick-row.pick-gold {border-left:3px solid var(--gold)}
-  .modal-pick-row.pick-red   {opacity:.45}
-  .modal-pick-row.pick-yellow{border-left:3px solid var(--yellow);opacity:.85}
-  .modal-pick-left{flex:1;min-width:0}
-  .modal-pick-sel{font-size:13px;font-weight:600}
-  .modal-pick-sub{font-size:11px;color:var(--muted);margin-top:2px}
-  .modal-pick-right{display:flex;align-items:center;gap:8px;flex-shrink:0}
+  .edge-game-group{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);
+    padding:10px 14px 14px;margin-bottom:12px}
 
   /* TICKET */
   .ticket-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);
@@ -271,100 +185,6 @@
   .btn-copy-parlay:hover{background:#0c1f38}
   .btn-copy-parlay.copied{border-color:var(--green);color:var(--green)}
 
-  /* HIGH PROB */
-  .prob-list{display:flex;flex-direction:column;gap:8px}
-  .prob-row{display:flex;align-items:center;gap:14px;background:var(--bg2);
-    border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;transition:border-color .15s}
-  .prob-row:hover{border-color:#3a4060}
-  .prob-rank{font-size:12px;font-weight:700;color:var(--muted);min-width:22px;text-align:center}
-  .prob-circle{width:56px;height:56px;border-radius:50%;display:flex;align-items:center;
-    justify-content:center;flex-shrink:0;font-size:12px;font-weight:800;line-height:1.1;
-    text-align:center;border:2px solid}
-  .prob-circle.tier-a{border-color:var(--green);color:var(--green);background:var(--green-dim)}
-  .prob-circle.tier-b{border-color:var(--blue); color:var(--blue); background:var(--blue-dim)}
-  .prob-circle.tier-c{border-color:var(--yellow);color:var(--yellow);background:var(--yellow-dim)}
-  .prob-circle.tier-neutral{border-color:var(--muted); color:var(--muted); background:var(--bg3)}
-  .prob-info{flex:1;min-width:0}
-  .prob-sel{font-size:15px;font-weight:700;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .prob-game{font-size:11px;color:var(--muted);margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .prob-bar-wrap{height:3px;background:var(--bg3);border-radius:2px;overflow:hidden}
-  .prob-bar-fill{height:100%;border-radius:2px}
-  .prob-bar-fill.tier-a{background:var(--green)} .prob-bar-fill.tier-b{background:var(--blue)}
-  .prob-bar-fill.tier-c{background:var(--yellow)}
-  .prob-bar-fill.tier-neutral{background:var(--muted)}
-  .prob-right{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0}
-  .prob-fd-line{font-family:'Courier New',monospace;font-size:11px;color:#38bdf8;text-align:right}
-  .prob-badges{display:flex;gap:6px;align-items:center}
-
-  /* RANKING KELLY */
-  .kelly-list{display:flex;flex-direction:column;gap:8px}
-  .kelly-row{display:flex;align-items:center;gap:16px;background:var(--bg2);
-    border:1px solid var(--border);border-radius:var(--radius);padding:13px 16px 13px 12px;
-    border-left:3px solid var(--kelly-soft);transition:border-color .15s}
-  .kelly-row:hover{border-color:#3a4060}
-  .kelly-row.tier-excelente,.kelly-row.tier-fuerte{border-left-color:var(--kelly)}
-  .kelly-row.tier-moderado{border-left-color:var(--kelly-soft)}
-  .kelly-row.tier-leve{border-left-color:#463a7a}
-  .k-rank{width:20px;flex-shrink:0;font-family:var(--mono);font-size:12px;color:var(--muted);text-align:center}
-  .k-main{flex:1;min-width:0}
-  .k-game{font-size:11.5px;color:var(--muted);margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .k-pick{font-size:14.5px;font-weight:700;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-  .k-mkt{font-size:9.5px;font-weight:700;color:var(--muted);background:var(--bg3);
-    padding:2px 6px;border-radius:4px;letter-spacing:.3px}
-  .k-books{font-size:10.5px;color:var(--muted)}
-  .k-odds{width:64px;flex-shrink:0;font-family:var(--mono);font-weight:800;font-size:14px;text-align:right}
-  .k-odds.pos{color:var(--gold)} .k-odds.neg{color:#94a3b8}
-  .k-score-block{width:140px;flex-shrink:0;display:flex;flex-direction:column;gap:5px}
-  .k-score-top{display:flex;align-items:baseline;gap:6px;justify-content:flex-end}
-  .k-score-num{font-family:var(--mono);font-weight:800;font-size:21px;color:var(--kelly);
-    font-variant-numeric:tabular-nums}
-  .k-score-max{font-size:11px;color:var(--muted)}
-  .k-score-tier{font-size:10px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;text-align:right}
-  .tier-excelente .k-score-tier,.tier-excelente .k-score-num{color:var(--kelly)}
-  .tier-fuerte .k-score-tier,.tier-fuerte .k-score-num{color:#a599f2}
-  .tier-moderado .k-score-tier,.tier-moderado .k-score-num{color:#8479c2}
-  .tier-leve .k-score-tier,.tier-leve .k-score-num{color:#726a9c}
-  .k-gauge{height:6px;border-radius:4px;background:var(--bg3);overflow:hidden}
-  .k-gauge-fill{height:100%;background:linear-gradient(90deg,var(--kelly-soft),var(--kelly))}
-  .k-stake{width:52px;flex-shrink:0;text-align:center;font-size:11px;font-weight:700;
-    padding:5px 0;border-radius:6px;background:var(--kelly-dim);color:#c9bdff}
-  .kelly-row-disabled{border-left-color:var(--border)!important}
-  .tier-none .k-score-tier,.tier-none .k-score-num{color:var(--muted)}
-  .tier-none .k-gauge-fill{background:var(--border)}
-  .k-no-copy{flex-shrink:0;font-size:10.5px;font-weight:700;color:var(--muted);
-    border:1px dashed var(--border);border-radius:6px;padding:6px 10px;text-align:center;white-space:nowrap}
-  @media(max-width:720px){
-    .kelly-row{flex-wrap:wrap}
-    .k-main{order:1;flex-basis:100%}
-    .k-rank{order:0} .k-odds{order:2} .k-score-block{order:3} .k-stake{order:4} .kelly-row .btn-copy{order:5} .kelly-row .k-no-copy{order:5}
-  }
-  .today-panel{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);
-    padding:26px 22px;display:flex;flex-direction:column;align-items:center;text-align:center;gap:10px}
-  .today-icon{font-size:26px;opacity:.7}
-  .today-title{font-size:14px;font-weight:700}
-  .today-sub{font-size:12.5px;color:var(--muted);max-width:52ch}
-  .nearmiss{margin-top:6px;width:100%;max-width:480px;display:flex;align-items:center;gap:12px;
-    background:var(--bg3);border:1px dashed var(--border);border-radius:var(--radius);
-    padding:10px 14px;opacity:.75}
-  .nearmiss .k-main{text-align:left}
-  .nearmiss .k-score-num{font-size:16px;color:var(--muted)}
-  .nearmiss .kelly-row{background:transparent;border:none;border-left:2px solid var(--border);
-    border-radius:0;padding:0 0 0 10px;width:100%}
-  .formula-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);
-    padding:20px 22px;display:grid;grid-template-columns:1.3fr 1fr;gap:24px;margin-top:20px}
-  @media(max-width:720px){.formula-card{grid-template-columns:1fr}}
-  .formula-title{font-size:12px;font-weight:700;color:var(--kelly);margin-bottom:10px;
-    text-transform:uppercase;letter-spacing:.4px}
-  .formula-line{font-family:var(--mono);font-size:12.5px;color:var(--text);background:var(--bg3);
-    border-radius:6px;padding:9px 11px;margin-bottom:6px;overflow-x:auto;white-space:pre}
-  .formula-note{font-size:11.5px;color:var(--muted);margin-top:8px;line-height:1.6}
-  .stake-table{width:100%;border-collapse:collapse;font-size:12px}
-  .stake-table td{padding:7px 4px;border-bottom:1px solid var(--border)}
-  .stake-table tr:last-child td{border-bottom:none}
-  .stake-table .rng{font-family:var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
-  .stake-table .lbl{font-weight:700}
-  .k-swatch{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:7px}
-
   /* SPORTS TABLE */
   .sports-table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:24px}
   .sports-table th{text-align:left;padding:10px 14px;color:var(--muted);font-weight:600;
@@ -389,18 +209,10 @@
   @media(max-width:600px){
     main{padding:14px} .cards-grid{grid-template-columns:1fr}
     .tabs{padding:12px 14px 0} header{padding:12px 14px}
-    .prob-row{gap:10px;padding:12px} .prob-circle{width:46px;height:46px;font-size:11px}
-    .game-row-markets{display:none} .modal{padding:16px}
-    .game-row-right .odds-badge{display:none}
   }
 </style>
 </head>
 <body>
-
-<!-- MODAL -->
-<div class="modal-overlay" id="modal-overlay" onclick="if(event.target===this)closeModal()">
-  <div class="modal" id="modal-content"></div>
-</div>
 
 <header>
   <div class="logo">
@@ -418,13 +230,11 @@
 </header>
 
 <div class="tabs">
-  <button class="tab active" onclick="showTab('dashboard')" id="tab-dashboard">🏆 Dashboard</button>
-  <button class="tab" onclick="showTab('todos')"      id="tab-todos">📋 Todos los Juegos</button>
-  <button class="tab" onclick="showTab('efficiency')" id="tab-efficiency">🔒 Eficiencia</button>
-  <button class="tab" onclick="showTab('highprob')"   id="tab-highprob">⭐ Alta Prob</button>
-  <button class="tab" onclick="showTab('kelly')"      id="tab-kelly">🎯 Ranking Kelly</button>
-  <button class="tab" onclick="showTab('tickets')"    id="tab-tickets">🎟 Tickets</button>
-  <button class="tab" onclick="showTab('debug')"      id="tab-debug">🛠 Debug</button>
+  <button class="tab active" onclick="showTab('todos')" id="tab-todos">📋 Todos los Juegos</button>
+  <button class="tab" onclick="showTab('edge')"      id="tab-edge">🎯 Apuestas Edge</button>
+  <button class="tab" onclick="showTab('ev')"        id="tab-ev">📊 Apuestas EV</button>
+  <button class="tab" onclick="showTab('tickets')"   id="tab-tickets">🎟 Tickets</button>
+  <button class="tab" onclick="showTab('debug')"     id="tab-debug">🛠 Debug</button>
 </div>
 
 <main>
@@ -436,42 +246,43 @@
   <div id="global-warnings"></div>
   <div id="cache-info"></div>
 
-  <!-- DASHBOARD -->
-  <div class="tab-content active" id="content-dashboard">
-    <div id="top-picks-container"></div>
-  </div>
-
   <!-- TODOS LOS JUEGOS -->
-  <div class="tab-content" id="content-todos">
+  <div class="tab-content active" id="content-todos">
     <div class="section-header">
-      <span class="section-title">📋 Todos los Juegos — ML / Spread / Total</span>
-      <span class="section-count" id="all-games-count">0</span>
+      <span class="section-title">📋 Todos los Juegos — Cartelera del día</span>
+      <span class="section-count" id="schedule-count">0</span>
     </div>
-    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Haz clic en cualquier fila para ver la evaluación completa de los 3 mercados.</p>
-    <div class="game-list" id="all-games-list"></div>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Solo qué hay en cartelera hoy — sin predicción ni cálculo. Para picks con números, andá a "Apuestas Edge" o "Apuestas EV".</p>
+    <div class="game-list" id="schedule-list"></div>
   </div>
 
-  <!-- EFICIENCIA -->
-  <div class="tab-content" id="content-efficiency">
+  <!-- APUESTAS EDGE -->
+  <div class="tab-content" id="content-edge">
     <div class="section-header">
-      <span class="section-title">🔒 Sólidos — Alta Probabilidad</span>
+      <span class="section-title">🎯 Apuestas Edge — mejor ML / Spread / Total por partido</span>
+      <span class="section-count" id="edge-count">0</span>
+    </div>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Sin filtro de tier: los números completos (probabilidad, validación, EV%) de los 3 mercados de cada partido, para que decidas vos. El precio justo usa como ancla una casa de bajo vig (Pinnacle/LowVig.ag) cuando está disponible — ver Debug.</p>
+    <div id="edge-list"></div>
+  </div>
+
+  <!-- APUESTAS EV -->
+  <div class="tab-content" id="content-ev">
+    <div id="ev-summary"></div>
+
+    <div class="section-header">
+      <span class="section-title">🔒 Sólido</span>
       <span class="section-count" id="eff-green-count">0</span>
     </div>
     <p style="font-size:12px;color:var(--muted);margin-bottom:16px">MLB · NBA · NHL — Favoritos con ≥60% de probabilidad y edge real positivo.</p>
     <div class="cards-grid" id="efficiency-green-grid"></div>
 
-    <div class="section-header">
-      <span class="section-title">📌 Probables</span>
+    <div class="section-header" style="margin-top:36px">
+      <span class="section-title">📌 Probable</span>
       <span class="section-count" id="eff-blue-count">0</span>
     </div>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">EV real ≥ -1.0%. Incluye señales de probabilidad moderada (55-58%) que califican solo por su EV real, sin exigirles el piso de probabilidad/validación completo.</p>
     <div class="cards-grid" id="efficiency-blue-grid"></div>
-
-    <div class="section-header" style="margin-top:36px">
-      <span class="section-title">🟡 Especulativo</span>
-      <span class="section-count" id="eff-yellow-count">0</span>
-    </div>
-    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Probabilidad moderada (55-58%) con EV esperado aceptable — más riesgo que Probable. A diferencia de Sólido/Probable, este piso usa EV crudo en vez de edge (exigir edge real positivo lo dejaba vacío en la práctica), así que puede favorecer levemente cuotas más altas.</p>
-    <div class="cards-grid" id="efficiency-yellow-grid"></div>
 
     <div class="section-header" style="margin-top:36px">
       <span class="section-title">⚠ Evitar — Sin valor suficiente</span>
@@ -479,51 +290,6 @@
     </div>
     <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Picks que no cumplen criterios en ningún mercado hoy.</p>
     <div class="cards-grid" id="avoid-grid"></div>
-  </div>
-
-  <!-- ALTA PROB -->
-  <div class="tab-content" id="content-highprob">
-    <div class="section-header">
-      <span class="section-title">⭐ Alta Probabilidad — 65%+</span>
-      <span class="section-count" id="highprob-count">0</span>
-    </div>
-    <p style="font-size:12px;color:var(--muted);margin-bottom:4px">MLB · NBA · NHL — Picks ordenados por probabilidad descendente.</p>
-    <p style="font-size:12px;color:var(--muted);margin-bottom:16px" id="highprob-goal-note"></p>
-    <div class="prob-list" id="highprob-list"></div>
-  </div>
-
-  <!-- RANKING KELLY -->
-  <div class="tab-content" id="content-kelly">
-    <div class="section-header">
-      <span class="section-title">🎯 Ranking Kelly — un pick por partido</span>
-      <span class="section-count" id="kelly-count">0</span>
-    </div>
-    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Un solo score 0–10 por partido (Kelly Criterion: probabilidad real + cuota). Sin EV%/probabilidad sueltos — para el detalle completo de cada mercado, esos números siguen en "Todos los Juegos". Los partidos sin score suficiente no aparecen acá: no se marcan EVITAR, simplemente no están. Tickets/Parlays usan este mismo score.</p>
-
-    <div class="kelly-list" id="kelly-list"></div>
-    <div id="kelly-empty"></div>
-
-    <div class="formula-card">
-      <div>
-        <div class="formula-title">Cómo se calcula</div>
-        <div class="formula-line">score = clamp( kelly_usado × 200, 0, 10 )</div>
-        <div class="formula-line">kelly_usado = kelly_completo × 0.25 × confianza_libros</div>
-        <div class="formula-line">kelly_completo = p − (1−p) / b</div>
-        <div class="formula-line">b = cuota_decimal − 1
-confianza_libros = clamp(casas / 4, 0, 1)</div>
-        <div class="formula-note">p = probabilidad real sin vig. El ×0.25 es Kelly fraccional (full Kelly es demasiado agresivo). confianza_libros reutiliza el mismo shrink que ya usa el ranking por edge en Eficiencia.<br><br>Piso para aparecer acá: <b>score ≥ 0.5</b>. Tickets/Parlays usan el mismo score pero un piso más estricto (<b>score ≥ 1.5</b> por pata) porque combinan el riesgo de varias patas a la vez — pueden mostrar menos picks que este ranking, nunca más.</div>
-      </div>
-      <div>
-        <div class="formula-title">Stake sugerido por score</div>
-        <table class="stake-table">
-          <tr><td class="rng"><span class="k-swatch" style="background:var(--kelly)"></span>8.0–10.0</td><td class="lbl">Excelente</td><td>1u</td></tr>
-          <tr><td class="rng"><span class="k-swatch" style="background:#a599f2"></span>6.0–7.9</td><td class="lbl">Fuerte</td><td>0.5u</td></tr>
-          <tr><td class="rng"><span class="k-swatch" style="background:#8479c2"></span>4.0–5.9</td><td class="lbl">Moderado</td><td>0.25u</td></tr>
-          <tr><td class="rng"><span class="k-swatch" style="background:#726a9c"></span>0.5–3.9</td><td class="lbl">Leve</td><td>0.1u</td></tr>
-          <tr><td class="rng"><span class="k-swatch" style="background:var(--bg3);border:1px solid var(--border)"></span>&lt; 0.5</td><td class="lbl" style="color:var(--muted)">—</td><td style="color:var(--muted)">no aparece</td></tr>
-        </table>
-      </div>
-    </div>
   </div>
 
   <!-- TICKETS -->
@@ -558,6 +324,8 @@ confianza_libros = clamp(casas / 4, 0, 1)</div>
   <div class="tab-content" id="content-debug">
     <div class="section-header"><span class="section-title">🛠 Estado de Ligas</span></div>
     <div id="debug-container"></div>
+    <div class="section-header" style="margin-top:24px"><span class="section-title">📡 Fuente del precio justo (fair price)</span></div>
+    <div id="debug-edge-source"></div>
   </div>
 
 </main>
@@ -601,7 +369,7 @@ async function loadData(forceRefresh = false) {
     setStatus('live', dashData);
   } catch (e) {
     setStatus('error');
-    document.getElementById('top-picks-container').innerHTML =
+    document.getElementById('schedule-list').innerHTML =
       `<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-msg">Error: ${e.message}</div></div>`;
   }
 }
@@ -612,15 +380,14 @@ function setStatus(state, data) {
   if (state === 'loading') { dot.className = ''; text.textContent = 'Cargando...'; }
   else if (state === 'live') {
     dot.className = 'live';
-    const n = (data.efficiency_green||[]).length + (data.efficiency_blue||[]).length + (data.efficiency_yellow||[]).length;
+    const n = (data.efficiency_green||[]).length + (data.efficiency_blue||[]).length;
     text.textContent = `${n} picks · ${new Date().toLocaleTimeString('es',{hour:'2-digit',minute:'2-digit'})}`;
   } else { dot.className = ''; text.textContent = 'Error'; }
 }
 
 function showLoading() {
-  ['top-picks-container','all-games-list','efficiency-green-grid','efficiency-blue-grid',
-   'efficiency-yellow-grid','avoid-grid','highprob-list','kelly-list',
-   'parlays-container','parlays-mltotal-container','tickets-container','debug-container'].forEach(id => {
+  ['schedule-list','edge-list','ev-summary','efficiency-green-grid','efficiency-blue-grid',
+   'avoid-grid','parlays-container','parlays-mltotal-container','tickets-container','debug-container'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.innerHTML = `<div class="loading-overlay"><div class="loading-spinner"></div> Cargando...</div>`;
   });
@@ -631,14 +398,9 @@ function renderAll(data) {
   const gw = document.getElementById('global-warnings');
   if (gw) gw.innerHTML = warningsBanner(data.warnings);
   renderCacheInfo(data);
-  renderDashboard(data);
-  renderAllGames(data);
-  renderGrid('efficiency-green-grid',  data.efficiency_green  || [], 'eff-green-count');
-  renderGrid('efficiency-blue-grid',   data.efficiency_blue   || [], 'eff-blue-count');
-  renderGrid('efficiency-yellow-grid', data.efficiency_yellow || [], 'eff-yellow-count');
-  renderAvoid(data);
-  renderHighProb(data);
-  renderKelly(data);
+  renderSchedule(data);
+  renderEdge(data);
+  renderEv(data);
   renderParlays(data);
   renderParlaysMlTotal(data);
   renderTickets(data);
@@ -670,12 +432,7 @@ function renderCacheInfo(data) {
     </div>`;
 }
 
-// ── DASHBOARD (resumen ejecutivo) ────────────────────────
-// A diferencia de "Todos los Juegos" (listado completo) y "Eficiencia"
-// (filtro por clasificación), el Dashboard no repite esas listas: muestra
-// solo el mejor pick (por edge real) cruzando los 3 mercados por partido, un resumen de los
-// parlays disponibles, y warnings — contenido que no está en ninguna otra
-// pestaña.
+// ── AVISOS ────────────────────────────────────────────────
 function warningsBanner(warnings) {
   if (!warnings || !warnings.length) return '';
   return `
@@ -689,254 +446,81 @@ function warningsBanner(warnings) {
 }
 
 function classificationSummary(data) {
-  const green  = (data.efficiency_green  || []).length;
-  const blue   = (data.efficiency_blue   || []).length;
-  const yellow = (data.efficiency_yellow || []).length;
-  const red    = (data.avoid             || []).length;
+  const green = (data.efficiency_green || []).length;
+  const blue  = (data.efficiency_blue  || []).length;
+  const red   = (data.avoid            || []).length;
   return `
     <div class="stat-grid">
       <div class="stat-tile green"><div class="stat-tile-value">${green}</div><div class="stat-tile-label">🔒 SÓLIDO</div></div>
       <div class="stat-tile blue"><div class="stat-tile-value">${blue}</div><div class="stat-tile-label">📌 PROBABLE</div></div>
-      <div class="stat-tile yellow"><div class="stat-tile-value">${yellow}</div><div class="stat-tile-label">🟡 ESPECULATIVO</div></div>
       <div class="stat-tile red"><div class="stat-tile-value">${red}</div><div class="stat-tile-label">⚠ EVITAR</div></div>
     </div>`;
 }
 
-function parlaySummaryCard(title, data, prefix) {
-  const t3 = data[prefix + '3'];
-  const legsPreview = (t3 && t3.picks && t3.picks.length)
-    ? `<div class="parlay-summary-legs">
-        ${t3.picks.slice(0, 3).map(p => `<div class="parlay-summary-leg">${p.selection || ''} <span style="color:var(--muted)">· ${p.short_market || p.market || ''}</span></div>`).join('')}
-      </div>`
-    : '';
-
-  const rows = [3, 6, 10].map(n => {
-    const t = data[prefix + n];
-    if (!t) return '';
-    const partial = t.insufficient ? ` <span style="color:var(--gold)">· parcial</span>` : '';
-    const label = t.games_count != null
-      ? `${n} juegos · ${t.picks_count} legs`
-      : `${n} patas · ${t.picks_count} picks`;
-    return `
-      <div class="parlay-summary-row">
-        <span>${label}${partial}</span>
-        <span>Prob ${t.combined_probability != null ? t.combined_probability.toFixed(1) : '--'}%</span>
-      </div>`;
-  }).join('');
-  return `
-    <div class="parlay-summary-card">
-      <div class="parlay-summary-title">🎯 ${title}</div>
-      ${legsPreview}
-      ${rows || '<div style="font-size:12px;color:var(--muted)">Sin datos suficientes hoy.</div>'}
-      <button class="btn btn-outline" style="margin-top:12px;width:100%" onclick="showTab('tickets')">Ver parlays →</button>
-    </div>`;
-}
-
-function renderDashboard(data) {
-  const allG = data.all_games || [];
-
-  const topEv = allG
-    .map((g, idx) => ({ g, idx }))
-    .filter(x => x.g.best_market)
-    .sort((a, b) => (b.g.best_market.rank_score ?? -999) - (a.g.best_market.rank_score ?? -999))
-    .slice(0, 20);
-
-  const hasWarnings = data.warnings && data.warnings.length;
-
-  if (!allG.length && !hasWarnings) {
-    document.getElementById('top-picks-container').innerHTML =
-      `<div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-msg">No hay juegos disponibles hoy. Intenta más tarde.</div></div>`;
-    return;
-  }
-
-  let html = classificationSummary(data);
-
-  if (topEv.length) {
-    html += `<div class="section-header"><span class="section-title">🎯 Mejor Pick del Día — ML / Spread / Total</span><span class="section-count">${topEv.length}</span></div>`;
-    html += `<p style="font-size:12px;color:var(--muted);margin-bottom:16px">Resumen ejecutivo: el mejor pick de cada partido por edge real, cruzando ML/Spread/Total (el EV% se muestra como referencia). Para ver los 3 mercados completos de cada juego, andá a "Todos los Juegos".</p>`;
-    html += `<div class="game-list">${topEv.map((x, rank) => renderTopEvRow(x.g, x.idx, rank + 1)).join('')}</div>`;
-  }
-
-  html += `<div class="section-header" style="margin-top:32px"><span class="section-title">🎟 Parlays Disponibles</span></div>`;
-  html += `<div class="cards-grid">
-    ${parlaySummaryCard('Parlay Mixto',      data, 'ticket_')}
-    ${parlaySummaryCard('Parlay ML + Total', data, 'ticket_mltotal_')}
-  </div>`;
-
-  document.getElementById('top-picks-container').innerHTML = html;
-}
-
-// ── ALL GAMES ─────────────────────────────────────────────
-function renderAllGames(data) {
-  const games = data.all_games || [];
-  const el    = document.getElementById('all-games-list');
-  const count = document.getElementById('all-games-count');
+// ── TODOS LOS JUEGOS (cartelera, sin predicción) ──────────
+function renderSchedule(data) {
+  const games = data.schedule || [];
+  const el    = document.getElementById('schedule-list');
+  const count = document.getElementById('schedule-count');
   if (count) count.textContent = games.length;
   if (!games.length) {
     el.innerHTML = `<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-msg">No hay juegos disponibles hoy.</div></div>`;
     return;
   }
-  el.innerHTML = games.map((g,i) => renderGameRow(g,i)).join('');
-}
-
-// Fila compacta de "leaderboard" para el Dashboard: rank, matchup, mejor
-// pick y EV. A diferencia de renderGameRow (usada en "Todos los Juegos"),
-// no repite los 3 mini-badges ML/SPR/TOT ni la hora.
-function renderTopEvRow(g, idx, rank) {
-  const bm = g.best_market;
-  if (!bm) return '';
-  const oddsRaw   = bm.fanduel_odds ?? bm.odds;
-  const oddsStr   = oddsRaw != null ? fmtOdds(oddsRaw) : '';
-  const oddsClass = oddsRaw > 0 ? 'odds-pos' : 'odds-neg';
-  const mktLabel  = bm.recommended_market || 'ML';
-  const evVal     = bm.ev;
-  const evStr     = evVal != null ? (evVal > 0 ? '+' : '') + evVal.toFixed(1) + '%' : '--';
-  const evClass   = evVal != null && evVal >= 0 ? 'pos' : 'neg';
-  return `
-    <div class="top-ev-row" onclick="openModal(${idx})">
-      <div class="top-ev-rank">#${rank}</div>
-      <div class="top-ev-main">
-        <span class="top-ev-name">${g.game || ''}</span>
-        <span class="top-ev-pick">${mktLabel} · ${bm.selection || ''}</span>
-      </div>
-      <div class="top-ev-right">
-        <span class="market-pill ${bm.color || 'blue'}">${bm.label || mktLabel}</span>
-        ${oddsStr ? `<span class="odds-badge ${oddsClass}">${oddsStr}</span>` : ''}
-        <span class="top-ev-ev ${evClass}">${evStr}</span>
-      </div>
-    </div>`;
-}
-
-function renderGameRow(g, idx) {
-  const bm  = g.best_market;
-  const color = bm ? (bm.color || 'blue') : 'muted';
-  const mlTop  = g.ml     && g.ml[0];
-  const sprTop = g.spread && g.spread[0];
-  const totTop = g.total  && g.total[0];
-  const time = g.start_time
-    ? new Date(g.start_time).toLocaleTimeString('es',{hour:'2-digit',minute:'2-digit'}) : '';
-  const bestSel     = bm ? (bm.selection || '') : '';
-  const bestOddsRaw = bm ? (bm.fanduel_odds ?? bm.odds) : null;
-  const bestOddsStr = bestOddsRaw != null ? fmtOdds(bestOddsRaw) : '';
-  const oddsClass   = bestOddsRaw > 0 ? 'odds-pos' : 'odds-neg';
-  const mktLabel    = bm ? (bm.recommended_market || 'ML') : '—';
-
-  const mkDot = (sig, label) => sig
-    ? `<span class="mkt-dot ${sig.color||'red'}">${label}</span>`
-    : `<span class="mkt-dot none">${label}</span>`;
-
-  return `
-    <div class="game-row" onclick="openModal(${idx})">
-      <div class="game-row-main">
-        <div class="game-row-name">${g.game||''}</div>
-        <div class="game-row-sub">
-          <span class="card-sport" style="display:inline-flex">${g.sport||''}</span>
-          ${time ? `<span>🕐 ${time}</span>` : ''}
-        </div>
-      </div>
-      <div class="game-row-markets">
-        ${mkDot(mlTop,'ML')}${mkDot(sprTop,'SPR')}${mkDot(totTop,'TOT')}
-      </div>
-      <div class="game-row-right">
-        <span class="market-pill ${color}">${mktLabel}</span>
-        ${bestSel ? `<span style="font-size:12px;font-weight:600;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block">${bestSel}</span>` : ''}
-        ${bestOddsStr ? `<span class="odds-badge ${oddsClass}">${bestOddsStr}</span>` : ''}
-        <span style="color:var(--muted);font-size:15px">›</span>
-      </div>
-    </div>`;
-}
-
-// ── MODAL ─────────────────────────────────────────────────
-function openModal(idx) {
-  if (!dashData?.all_games) return;
-  const g = dashData.all_games[idx];
-  if (!g) return;
-  document.getElementById('modal-content').innerHTML = renderGameModal(g);
-  document.getElementById('modal-overlay').classList.add('open');
-  document.body.style.overflow = 'hidden';
-}
-function closeModal() {
-  document.getElementById('modal-overlay').classList.remove('open');
-  document.body.style.overflow = '';
-}
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
-
-function renderGameModal(g) {
-  const bm   = g.best_market;
-  const time = g.start_time
-    ? new Date(g.start_time).toLocaleString('es',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
-
-  let banner = '';
-  if (bm) {
-    const bc   = bm.color || 'blue';
-    const icon = bc==='green'?'🔒':bc==='gold'?'💎':bc==='blue'?'📌':'⚠';
-    const oddsRaw = bm.fanduel_odds ?? bm.odds;
-    const odds    = fmtOdds(oddsRaw) || '--';
-    const oc      = oddsRaw > 0 ? 'odds-pos' : 'odds-neg';
-    const mkt     = bm.short_market || bm.recommended_market || 'ML';
-    const pickLine = `${bm.selection||''} · ${mkt} · ${odds}`;
-    banner = `
-      <div class="best-market-banner ${bc}">
-        <span style="font-size:22px;flex-shrink:0">${icon}</span>
-        <div style="flex:1;min-width:0">
-          <div style="font-size:10px;font-weight:700;text-transform:uppercase;opacity:.7;margin-bottom:3px">Mejor Mercado Recomendado</div>
-          <div style="font-size:13px;font-weight:700">${bm.reason||''}</div>
-          <div style="font-size:12px;margin-top:4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            <span>${bm.selection||''}</span>
-            <span class="odds-badge ${oc}">${odds}</span>
-            <button class="btn-copy" style="font-size:10px;padding:3px 8px" data-pick="${escAttr(pickLine)}" onclick="copyPick(this,this.dataset.pick)">Copiar</button>
+  el.innerHTML = games.map(g => {
+    const time = g.start_time
+      ? new Date(g.start_time).toLocaleTimeString('es',{hour:'2-digit',minute:'2-digit'}) : '';
+    return `
+      <div class="game-row">
+        <div class="game-row-main">
+          <div class="game-row-name">${g.game||''}</div>
+          <div class="game-row-sub">
+            <span class="card-sport" style="display:inline-flex">${g.sport||''}</span>
+            ${time ? `<span>🕐 ${time}</span>` : ''}
           </div>
         </div>
       </div>`;
-  }
+  }).join('');
+}
 
-  function mkSection(label, picks) {
-    if (!picks || !picks.length)
-      return `<div class="modal-market-section"><div class="modal-market-label">${label}</div><div style="padding:14px;font-size:12px;color:var(--muted)">Sin datos disponibles.</div></div>`;
-    const rows = picks.slice(0,4).map(p => {
-      const oddsRaw = p.fanduel_odds ?? p.odds;
-      const odds = fmtOdds(oddsRaw) || '--';
-      const oc   = oddsRaw > 0 ? 'odds-pos' : 'odds-neg';
-      const prob = p.probability != null ? p.probability.toFixed(1)+'%' : '--';
-      const ev   = p.ev != null ? (p.ev>0?'+':'')+p.ev.toFixed(1)+'%' : '--';
-      const mkt  = p.short_market || p.market || 'ML';
-      const pickLine = `${p.selection||''} · ${mkt} · ${odds}`;
-      const fdBadge  = p.fanduel_available ? `<span style="font-size:10px;color:#38bdf8;font-weight:700">FD</span>` : '';
-      const copyable = (p.color || 'red') !== 'red';
-      const copyAction = copyable
-        ? `<button class="btn-copy" style="font-size:10px;padding:4px 8px" data-pick="${escAttr(pickLine)}" onclick="copyPick(this,this.dataset.pick)">Copiar</button>`
-        : `<span class="btn-no-copy" style="font-size:9.5px;padding:4px 8px" title="EVITAR — no cumple los criterios mínimos, no es un pick jugable">No jugable</span>`;
-      return `
-        <div class="modal-pick-row pick-${p.color||'red'}">
-          <div class="modal-pick-left">
-            <div class="modal-pick-sel">${p.selection||''}</div>
-            <div class="modal-pick-sub">${p.label||''} · Val ${p.validation?.toFixed(1)||'--'} · EV ${ev} · ${p.bookmaker||''}</div>
-          </div>
-          <div class="modal-pick-right">
-            ${fdBadge}
-            <span class="odds-badge ${oc}">${odds}</span>
-            <span style="font-size:11px;color:var(--muted)">${prob}</span>
-            ${copyAction}
-          </div>
-        </div>`;
-    }).join('');
-    return `<div class="modal-market-section"><div class="modal-market-label">${label}</div>${rows}</div>`;
+// ── APUESTAS EDGE (mejor ML/Spread/Total por partido, sin tier) ──
+function renderEdge(data) {
+  const games = data.all_games || [];
+  const el    = document.getElementById('edge-list');
+  const count = document.getElementById('edge-count');
+  if (count) count.textContent = games.length;
+  if (!games.length) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-msg">No hay juegos disponibles hoy.</div></div>`;
+    return;
   }
+  el.innerHTML = games.map(g => {
+    const time = g.start_time
+      ? new Date(g.start_time).toLocaleTimeString('es',{hour:'2-digit',minute:'2-digit'}) : '';
+    const picks = [g.ml && g.ml[0], g.spread && g.spread[0], g.total && g.total[0]].filter(Boolean);
+    const cards = picks.length
+      ? `<div class="cards-grid">${picks.map(renderCard).join('')}</div>`
+      : `<div style="font-size:12px;color:var(--muted);padding:8px 0">Sin datos de mercado hoy.</div>`;
+    return `
+      <div class="edge-game-group">
+        <div class="game-row-main" style="padding:10px 4px">
+          <div class="game-row-name">${g.game||''}</div>
+          <div class="game-row-sub">
+            <span class="card-sport" style="display:inline-flex">${g.sport||''}</span>
+            ${time ? `<span>🕐 ${time}</span>` : ''}
+          </div>
+        </div>
+        ${cards}
+      </div>`;
+  }).join('');
+}
 
-  return `
-    <div class="modal-header">
-      <div>
-        <div style="font-size:11px;color:var(--muted);margin-bottom:5px">${g.sport||''} · ${time}</div>
-        <div class="modal-title">${g.game||''}</div>
-      </div>
-      <button class="modal-close" onclick="closeModal()">✕</button>
-    </div>
-    ${banner}
-    <div class="modal-markets">
-      ${mkSection('🏆 Moneyline', g.ml)}
-      ${mkSection('📊 Spread', g.spread)}
-      ${mkSection('📈 Total (O/U)', g.total)}
-    </div>`;
+// ── APUESTAS EV (fusion Dashboard + Eficiencia, por tier) ─
+function renderEv(data) {
+  const summary = document.getElementById('ev-summary');
+  if (summary) summary.innerHTML = classificationSummary(data);
+  renderGrid('efficiency-green-grid', data.efficiency_green || [], 'eff-green-count');
+  renderGrid('efficiency-blue-grid',  data.efficiency_blue  || [], 'eff-blue-count');
+  renderAvoid(data);
 }
 
 // ── CARD ──────────────────────────────────────────────────
@@ -1143,142 +727,6 @@ function renderTicketCard(t, extraClass) {
     </div>`;
 }
 
-// ── HIGH PROB ─────────────────────────────────────────────
-function renderHighProb(data) {
-  const picks = data.high_prob || [];
-  const list  = document.getElementById('highprob-list');
-  const ct    = document.getElementById('highprob-count');
-  const note  = document.getElementById('highprob-goal-note');
-  if (ct) ct.textContent = picks.length;
-
-  if (note) {
-    const goal = data.high_prob_goal_count || 0;
-    note.textContent = goal
-      ? `${goal} de ${picks.length} alcanzan el objetivo real de ≥65%. El resto es el mejor disponible hoy, mostrado igual para comparar (revisá el color/etiqueta de cada uno).`
-      : (picks.length ? `Ninguno alcanza hoy el objetivo de ≥65% — se muestra el mejor disponible del día, mayoría probablemente EVITAR.` : '');
-  }
-
-  if (!picks.length) {
-    list.innerHTML = `<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-msg">Sin partidos con datos hoy.</div></div>`;
-    return;
-  }
-  list.innerHTML = picks.map((p, i) => {
-    const prob     = p.probability || 0;
-    // El tier del circulo refleja la clasificacion real (color), no solo el
-    // numero crudo de probabilidad: reserva verde/azul para SOLIDO/PROBABLE,
-    // neutro cuando la clasificacion general es EVITAR (rojo).
-    const tier     = p.color === 'green'  ? 'tier-a'
-                    : p.color === 'blue'   ? 'tier-b'
-                    : p.color === 'yellow' ? 'tier-c'
-                    : 'tier-neutral';
-    const probStr  = prob.toFixed(1)+'%';
-    const oddsRaw  = p.fanduel_available ? p.fanduel_odds : p.odds;
-    const oddsStr  = fmtOdds(oddsRaw) || '--';
-    const mkt      = p.short_market || 'ML';
-    const fdLine   = `${p.selection||''} · ${mkt} · ${oddsStr}`;
-    const fdBadge  = p.fanduel_available
-      ? `<span style="font-size:10px;font-weight:700;color:#38bdf8">FD</span>`
-      : `<span style="font-size:10px;color:#f59e0b">⚠</span>`;
-    const ev = p.ev != null ? (p.ev>0?'+':'')+p.ev.toFixed(1)+'%' : '';
-    const pc = p.color || 'blue';
-    const lbl = p.label || '';
-    const copyable = pc !== 'red';
-    const copyAction = copyable
-      ? `<button class="btn-copy" data-pick="${escAttr(fdLine)}" onclick="copyPick(this,this.dataset.pick)">Copiar</button>`
-      : `<span class="btn-no-copy" title="EVITAR — no cumple los criterios mínimos, no es un pick jugable">No jugable</span>`;
-
-    return `
-      <div class="prob-row">
-        <div class="prob-rank">#${i+1}</div>
-        <div class="prob-circle ${tier}">${probStr}</div>
-        <div class="prob-info">
-          <div class="prob-sel">${p.selection||''}</div>
-          <div class="prob-game">${p.game||''}</div>
-          <div class="prob-badges">
-            <span class="card-sport">${p.sport||''}</span>
-            <span class="card-label lbl-${pc}" style="font-size:10px;padding:2px 7px">${lbl}</span>
-            ${ev?`<span style="font-size:10px;color:var(--muted)">EV ${ev}</span>`:''}
-          </div>
-          <div class="prob-bar-wrap" style="margin-top:6px">
-            <div class="prob-bar-fill ${tier}" style="width:${Math.min(prob,100).toFixed(1)}%"></div>
-          </div>
-        </div>
-        <div class="prob-right">
-          <div class="prob-badges">${fdBadge}<span class="odds-badge ${oddsRaw>0?'odds-pos':'odds-neg'}">${oddsStr}</span></div>
-          <div class="prob-fd-line">${fdLine}</div>
-          ${copyAction}
-        </div>
-      </div>`;
-  }).join('');
-}
-
-// ── RANKING KELLY ─────────────────────────────────────────
-function kellyTierClass(score) {
-  if (score >= 8.0) return 'tier-excelente';
-  if (score >= 6.0) return 'tier-fuerte';
-  if (score >= 4.0) return 'tier-moderado';
-  return 'tier-leve';
-}
-
-function renderKellyRow(p, rank, opts) {
-  const copyable = !opts || opts.copyable !== false;
-  const score    = p.kelly_score || 0;
-  const tierCls  = copyable ? kellyTierClass(score) : 'tier-none';
-  const oddsRaw  = p.fanduel_available ? p.fanduel_odds : p.odds;
-  const oddsStr  = fmtOdds(oddsRaw) || '--';
-  const mkt      = p.short_market || 'ML';
-  const fdLine   = `${p.selection||''} · ${mkt} · ${oddsStr}`;
-  const books    = p.book_count != null ? `${p.book_count} casas` : '';
-  const rankLbl  = rank != null ? `${rank}` : (copyable ? '—' : '✕');
-  const action   = copyable
-    ? `<button class="btn-copy" data-pick="${escAttr(fdLine)}" onclick="copyPick(this,this.dataset.pick)">Copiar</button>`
-    : `<span class="k-no-copy" title="No alcanza el piso de score — no es un pick jugable">No juega</span>`;
-  return `
-    <div class="kelly-row ${tierCls}${copyable?'':' kelly-row-disabled'}">
-      <div class="k-rank">${rankLbl}</div>
-      <div class="k-main">
-        <div class="k-game">${p.game||''} · ${p.sport||''}</div>
-        <div class="k-pick">${p.selection||''} <span class="k-mkt">${mkt}</span> <span class="k-books">${books}</span></div>
-      </div>
-      <div class="k-odds ${oddsRaw>0?'pos':'neg'}">${oddsStr}</div>
-      <div class="k-score-block">
-        <div class="k-score-top"><span class="k-score-num">${score.toFixed(1)}</span><span class="k-score-max">/10</span></div>
-        <div class="k-score-tier">${copyable ? (p.kelly_tier||'') : 'Bajo el piso'}</div>
-        <div class="k-gauge"><div class="k-gauge-fill" style="width:${Math.min(score*10,100).toFixed(0)}%"></div></div>
-      </div>
-      <div class="k-stake">${copyable ? (p.kelly_stake||'0u') : '—'}</div>
-      ${action}
-    </div>`;
-}
-
-function renderKelly(data) {
-  const picks = data.kelly_ranking || [];
-  const list  = document.getElementById('kelly-list');
-  const empty = document.getElementById('kelly-empty');
-  const ct    = document.getElementById('kelly-count');
-  if (ct) ct.textContent = picks.length;
-
-  if (picks.length) {
-    list.innerHTML = picks.map((p, i) => renderKellyRow(p, i + 1)).join('');
-    empty.innerHTML = '';
-    return;
-  }
-
-  list.innerHTML = '';
-  const nm = data.kelly_near_miss;
-  if (nm) {
-    empty.innerHTML = `
-      <div class="today-panel">
-        <div class="today-icon">📭</div>
-        <div class="today-title">0 partidos en el ranking hoy</div>
-        <div class="today-sub">Ninguno supera el piso de score 0.5 — día de mercado sin edge real explotable, no un filtro roto.</div>
-        <div class="nearmiss">${renderKellyRow(nm, null, {copyable: false})}</div>
-      </div>`;
-  } else {
-    empty.innerHTML = `<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-msg">Sin partidos con datos hoy.</div></div>`;
-  }
-}
-
 // ── DEBUG ─────────────────────────────────────────────────
 function renderDebug(data) {
   const sports = data.sports || {};
@@ -1297,6 +745,24 @@ function renderDebug(data) {
       <tbody>${rows||'<tr><td colspan="6" style="color:var(--muted);text-align:center;padding:20px">Sin datos</td></tr>'}</tbody>
     </table>
     <div style="margin-top:16px"><button class="btn btn-outline" onclick="clearCache()">🗑 Limpiar Cache</button></div>`;
+
+  const stats = data.edge_source_stats || {};
+  const total = Object.values(stats).reduce((a, b) => a + b, 0);
+  const labelFor = k => k === 'consensus' ? 'Consenso (fallback)' : k.replace('sharp:', '');
+  const rows2 = Object.entries(stats)
+    .sort((a, b) => b[1] - a[1])
+    .map(([k, v]) => `
+      <tr>
+        <td>${labelFor(k)}</td>
+        <td>${v}</td>
+        <td>${total ? (v / total * 100).toFixed(1) : '0.0'}%</td>
+      </tr>`).join('');
+  document.getElementById('debug-edge-source').innerHTML = `
+    <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Criterio usado para el precio justo (fair price) de cada señal del día: ancla en una casa sharp (Pinnacle/LowVig.ag) cuando cotiza ese mercado, o consenso entre todas las casas como fallback.</p>
+    <table class="sports-table">
+      <thead><tr><th>Fuente</th><th>Señales</th><th>%</th></tr></thead>
+      <tbody>${rows2||'<tr><td colspan="3" style="color:var(--muted);text-align:center;padding:20px">Sin datos</td></tr>'}</tbody>
+    </table>`;
 }
 
 async function clearCache() {

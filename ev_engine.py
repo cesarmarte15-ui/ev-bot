@@ -9,6 +9,7 @@ import time
 import logging
 import threading
 import requests
+from collections import Counter
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from typing import Optional
@@ -71,22 +72,23 @@ EFFICIENCY_MIN_EDGE_BLUE  = -1.5   # piso de edge para PROBABLE
 # se mantienen como compuertas adicionales (corroboracion cruzada, calidad
 # de precio), pero ya no alcanzan por si solas para pisar el EV real.
 EFFICIENCY_MIN_EV_GREEN = 0.0    # SÓLIDO exige EV real >= 0
-EFFICIENCY_MIN_EV_BLUE  = -0.5   # PROBABLE tolera EV levemente negativo (precio ajustado)
+EFFICIENCY_MIN_EV_BLUE  = -1.0   # PROBABLE tolera EV negativo hasta -1.0%
+# Ampliado de -0.5 a -1.0 (ver PROBATE_FALLBACK_* abajo): objetivo es
+# mostrar mas picks reales basados en EV sin bajar el piso de SOLIDO.
+# Simulado contra 33 capturas reales de produccion (13 ago - 4 sep 2026,
+# 2018 señales): con -1.0, 53 señales que antes quedaban en el tier
+# ESPECULATIVO (ver mas abajo) pasan a PROBABLE con EV% promedio +0.66%;
+# las 21 restantes (EV% promedio -1.31%) correctamente quedan en EVITAR.
 
-# Piso más bajo antes de EVITAR. Originalmente exigia edge >= 0 (puntos de
-# probabilidad, no 'ev' crudo) para no reintroducir el sesgo de cuota alta
-# que ranking_edge corrige. Verificado contra 25 capturas reales de
-# produccion (13-25 ago 2026, ~1700 señales): edge >= 0 solo lo cumple
-# ~2.7% de las señales, y combinado con el piso de prob de aca abajo,
-# ~0.24% (0% en las capturas posteriores al fix) — ESPECULATIVO nunca
-# aparecio en la practica. 'edge' compara una fair probability sin vig
-# contra la implicita CON vig del mejor precio, asi que da negativo casi
-# siempre salvo mispricing real entre casas. Se relaja a un piso de EV
-# (EFFICIENCY_MIN_EV_YELLOW), mas laxo que el de PROBABLE ya que este tier
-# ya se anuncia como "mayor riesgo", en vez de exigir edge real positivo.
-EFFICIENCY_MIN_PROB_YELLOW = 55.0
-EFFICIENCY_MIN_VAL_YELLOW  = 58.0
-EFFICIENCY_MIN_EV_YELLOW   = -1.5
+# Piso de prob/val del tier ESPECULATIVO (eliminado como tier propio, ver
+# classify_efficiency): se mantiene como el gate que decide QUE señales
+# "ex-especulativas" pueden calificar para PROBABLE sin exigirles el gate
+# normal de PROBABLE (prob>=58/val>=60/edge>=-1.5). Antes definia un tier
+# aparte con su propio piso de EV (-1.5); ese piso de EV ahora es el mismo
+# EFFICIENCY_MIN_EV_BLUE que el resto de PROBATE — todo lo que caiga entre
+# -1.5 y -1.0 pasa a EVITAR en vez de a un tier intermedio.
+PROBABLE_FALLBACK_MIN_PROB = 55.0
+PROBABLE_FALLBACK_MIN_VAL  = 58.0
 
 # Piso de casas de acuerdo para SÓLIDO/PROBABLE/ESPECULATIVO. Sin esto, un
 # precio de una sola casa (potencialmente un outlier o una línea stale) podía
@@ -313,6 +315,71 @@ def no_vig_h2h_probabilities(outcomes: list) -> tuple[dict, dict]:
     }
     return result, counts
 
+# Prioridad de casas "sharp" (bajo vig, referencia de precio justo) para
+# anclar el fair price en vez de promediar entre todas las casas
+# consultadas. Pinnacle primero (estandar de la industria); LowVig.ag como
+# proxy si Pinnacle no esta disponible. Nota: con REGIONS=us (default),
+# Pinnacle no aparece en los datos de The Odds API (es de la region eu) —
+# en la practica el ancla es LowVig.ag cuando cotiza, o el fallback de
+# consenso si tampoco. Agregar la region eu a REGIONS activaria Pinnacle,
+# a costo de duplicar el consumo de creditos de API por consulta.
+SHARP_BOOKS_PRIORITY = ["Pinnacle", "LowVig.ag"]
+
+def sharp_or_consensus_fair(outcomes: list) -> tuple[dict, dict, dict]:
+    """
+    Fair price anclado a una casa sharp cuando esta disponible, en vez del
+    promedio/consenso simple entre todas las casas (no_vig_h2h_probabilities).
+    Para cada (name, point) que una casa de SHARP_BOOKS_PRIORITY cotiza con
+    sus dos puntas, el de-vig se hace SOLO con esas dos puntas (el precio de
+    una casa sharp ya es la referencia de mercado, promediarlo con casas mas
+    blandas lo diluye). Si ninguna casa sharp cotiza ese mercado especifico,
+    cae al fallback de consenso actual.
+
+    'counts' (corroboracion entre casas, usado por EFFICIENCY_MIN_BOOKS) no
+    cambia: sigue siendo el conteo de consenso completo, sea cual sea el
+    origen del fair — la corroboracion es independiente de que precio se usa
+    como ancla. 'source' documenta que criterio se uso por señal, ver
+    get_dashboard()/edge_source_stats y Debug.
+    """
+    fair, counts = no_vig_h2h_probabilities(outcomes)
+    source = {k: "consensus" for k in fair}
+
+    by_sharp_book: dict[str, list] = {}
+    for o in outcomes:
+        book = o.get("bookmaker")
+        if book not in SHARP_BOOKS_PRIORITY:
+            continue
+        by_sharp_book.setdefault(book, []).append(o)
+
+    for book in SHARP_BOOKS_PRIORITY:
+        rows = by_sharp_book.get(book)
+        if not rows:
+            continue
+        groups: dict = {}
+        for o in rows:
+            name  = o.get("name")
+            point = o.get("point")
+            price = o.get("price")
+            if name is None or price is None:
+                continue
+            imp = implied_probability_american(price)
+            if imp is not None:
+                groups.setdefault(point, []).append((name, imp))
+        for point, items in groups.items():
+            if len(items) < 2:
+                continue
+            total = sum(p for _, p in items)
+            if total <= 0:
+                continue
+            for name, p in items:
+                key = (name, point)
+                if source.get(key, "consensus") != "consensus":
+                    continue  # ya anclado por una casa sharp de mayor prioridad
+                fair[key] = clamp(p / total, 0.01, 0.99)
+                source[key] = f"sharp:{book}"
+
+    return fair, counts, source
+
 def best_price_filtered(outcomes: list, name: str, fair: float, point=None) -> Optional[dict]:
     cand = []
     for o in outcomes:
@@ -386,11 +453,11 @@ def ranking_edge(sig: dict) -> float:
     return edge * confidence
 
 # ---------------------------------------------------------------------------
-# Kelly score — criterio único para Ranking Kelly y Tickets/Parlays
+# Kelly score — criterio único para Tickets/Parlays
 # ---------------------------------------------------------------------------
 KELLY_FRACTION    = 0.25   # Kelly fraccional (1/4): full Kelly apuesta demasiado agresivo
 KELLY_SCORE_SCALE = 200.0  # escala kelly_usado (fraccion de bankroll) a un score 0-10
-KELLY_MIN_SCORE   = 0.5    # piso para aparecer en Ranking Kelly
+KELLY_MIN_SCORE   = 0.5    # piso del tier "Leve" (ver KELLY_TIERS/kelly_tier)
 # Bajado de 2.0 a 0.5: kelly_full se clampea a 0 cuando no hay edge medible
 # (max(p-(1-p)/b, 0)), y en 25 capturas reales de produccion eso pasa en el
 # ~92% de los dias — ni bajando el piso a 0.1 se rescataban señales mas de
@@ -482,17 +549,18 @@ def smooth_validation(prob, odds, books, ev=0.0, edge=0.0) -> float:
 # ---------------------------------------------------------------------------
 def efficiency_failure_reason(prob, val, ev, odds, odds_ok, books=None, books_ok=True) -> str:
     """
-    Detalla contra qué umbral(es) de ESPECULATIVO (el piso más bajo antes de
-    EVITAR) falló el pick, para diagnosticar sin tener que inspeccionar
-    prob/val/ev manualmente en cada caso.
+    Detalla contra qué umbral(es) del piso más bajo antes de EVITAR
+    (EFFICIENCY_MIN_EV_BLUE, o el fallback de prob/val de PROBABLE) falló
+    el pick, para diagnosticar sin tener que inspeccionar prob/val/ev
+    manualmente en cada caso.
     """
     fails = []
-    if prob < EFFICIENCY_MIN_PROB_YELLOW:
-        fails.append(f"Prob {prob:.1f}% <{EFFICIENCY_MIN_PROB_YELLOW:.0f}%")
-    if val < EFFICIENCY_MIN_VAL_YELLOW:
-        fails.append(f"Val {val:.1f} <{EFFICIENCY_MIN_VAL_YELLOW:.0f}")
-    if ev < EFFICIENCY_MIN_EV_YELLOW:
-        fails.append(f"EV {ev:.1f}% <{EFFICIENCY_MIN_EV_YELLOW:.1f}%")
+    if ev < EFFICIENCY_MIN_EV_BLUE:
+        fails.append(f"EV {ev:.1f}% <{EFFICIENCY_MIN_EV_BLUE:.1f}%")
+    elif prob < PROBABLE_FALLBACK_MIN_PROB:
+        fails.append(f"Prob {prob:.1f}% <{PROBABLE_FALLBACK_MIN_PROB:.0f}%")
+    elif val < PROBABLE_FALLBACK_MIN_VAL:
+        fails.append(f"Val {val:.1f} <{PROBABLE_FALLBACK_MIN_VAL:.0f}")
     if not odds_ok:
         fails.append(f"Odds {odds} peor que {EFFICIENCY_MAX_ODDS}")
     if not books_ok:
@@ -515,22 +583,29 @@ def classify_efficiency(prob, val, ev, edge, odds, books=None) -> tuple[str, str
             and odds_ok and books_ok):
         return "blue", "📌 PROBABLE", "Alta probabilidad pero precio ajustado.", "0.25u"
 
-    # Piso más bajo antes de EVITAR, todavia en 'ev' crudo (ver comentario
-    # de EFFICIENCY_MIN_EV_YELLOW) a cambio de aceptar menos probabilidad
-    # — exigir edge real positivo aca dejaba este tier vacio en la
-    # practica (verificado con datos reales de produccion).
-    if (prob >= EFFICIENCY_MIN_PROB_YELLOW and val >= EFFICIENCY_MIN_VAL_YELLOW and ev >= EFFICIENCY_MIN_EV_YELLOW
+    # Ex-tier ESPECULATIVO (eliminado como categoria propia): estas señales
+    # no llegan al gate normal de PROBABLE (prob>=58/val>=60/edge>=-1.5),
+    # pero su EV real SI entra en el piso de PROBABLE (EFFICIENCY_MIN_EV_
+    # BLUE) — el EV real es lo que las califica, no la probabilidad de
+    # acierto. Se mantiene el piso mas bajo de prob/val (PROBABLE_FALLBACK_
+    # MIN_*) para filtrar ruido, pero sin exigir el piso completo de
+    # PROBABLE. Antes clasificaban en un tier "ESPECULATIVO" aparte con su
+    # propio piso de EV mas laxo (-1.5); ahora usan el mismo piso que el
+    # resto de PROBABLE (-1.0) — lo que caia entre -1.5 y -1.0 pasa a
+    # EVITAR (verificado contra 33 capturas reales: 53 señales promovidas,
+    # EV% promedio +0.66%; 21 correctamente a EVITAR, EV% promedio -1.31%).
+    if (ev >= EFFICIENCY_MIN_EV_BLUE and prob >= PROBABLE_FALLBACK_MIN_PROB and val >= PROBABLE_FALLBACK_MIN_VAL
             and odds_ok and books_ok):
-        return "yellow", "🟡 ESPECULATIVO", "Probabilidad moderada con valor esperado aceptable — mayor riesgo.", "0.1u-0.25u"
+        return "blue", "📌 PROBABLE", "Probabilidad moderada con EV real dentro del piso — mayor riesgo que el gate normal.", "0.1u-0.25u"
 
     # Salvaguarda: un EV real positivo nunca debe terminar en EVITAR aunque
     # prob/val (bajos por diseño en un underdog) no lleguen al piso de
-    # ESPECULATIVO — ese es exactamente el bug diagnosticado (underdog con
-    # EV positivo marcado EVITAR). odds_ok/books_ok se mantienen: no son el
+    # arriba — ese es exactamente el bug diagnosticado (underdog con EV
+    # positivo marcado EVITAR). odds_ok/books_ok se mantienen: no son el
     # sesgo de Validación que se esta corrigiendo, son filtros de calidad de
     # dato (precio demasiado corto / poca corroboracion entre casas).
     if ev > 0 and odds_ok and books_ok:
-        return "yellow", "🟡 ESPECULATIVO", f"EV real positivo ({ev:.1f}%) pero no cumple el resto de las compuertas de calidad.", "0.1u"
+        return "blue", "📌 PROBABLE", f"EV real positivo ({ev:.1f}%) pero no cumple el resto de las compuertas de calidad.", "0.1u"
 
     reason = efficiency_failure_reason(prob, val, ev, odds, odds_ok, books, books_ok)
     return "red", "⚠ EVITAR", reason, "0u"
@@ -553,7 +628,7 @@ def enrich(sig: dict) -> dict:
 # ---------------------------------------------------------------------------
 def moneyline_efficiency(game: dict, sport: str) -> list[dict]:
     outs = get_market_outcomes(game, "h2h")
-    fair, counts = no_vig_h2h_probabilities(outs)
+    fair, counts, source = sharp_or_consensus_fair(outs)
     signals = []
 
     for (name, _point), p in fair.items():
@@ -589,6 +664,7 @@ def moneyline_efficiency(game: dict, sport: str) -> list[dict]:
             "is_primary":        True,
             "fanduel_odds":      fd_odds,
             "fanduel_available": fd_odds is not None,
+            "fair_source":       source.get((name, _point), "consensus"),
         }))
 
     return sorted(signals, key=lambda x: (x["validation"], x["probability"]), reverse=True)
@@ -600,7 +676,7 @@ def spread_signals(game: dict, sport: str) -> list[dict]:
     outs = get_market_outcomes(game, "spreads")
     if not outs:
         return []
-    fair, counts = no_vig_h2h_probabilities(outs)
+    fair, counts, source = sharp_or_consensus_fair(outs)
 
     # Linea de consenso por lado: la que tiene mas casas de acuerdo. Si otra
     # casa cotiza un point distinto (linea movida/alt), se etiqueta como
@@ -650,6 +726,7 @@ def spread_signals(game: dict, sport: str) -> list[dict]:
             "fanduel_odds":      fd_odds,
             "fanduel_available": fd_odds is not None,
             "point":             point,
+            "fair_source":       source.get((name, point), "consensus"),
         }))
     return sorted(signals, key=lambda x: (ranking_edge(x), x["validation"], x["probability"]), reverse=True)
 
@@ -658,7 +735,7 @@ def total_signals(game: dict, sport: str) -> list[dict]:
     outs = get_market_outcomes(game, "totals")
     if not outs:
         return []
-    fair, counts = no_vig_h2h_probabilities(outs)
+    fair, counts, source = sharp_or_consensus_fair(outs)
     signals = []
     for (name, point), p in fair.items():
         best = best_price_filtered(outs, name, p, point=point)
@@ -694,6 +771,7 @@ def total_signals(game: dict, sport: str) -> list[dict]:
             "fanduel_odds":      fd_odds,
             "fanduel_available": fd_odds is not None,
             "point":             point,
+            "fair_source":       source.get((name, point), "consensus"),
         }))
     return sorted(signals, key=lambda x: (ranking_edge(x), x["validation"], x["probability"]), reverse=True)
 
@@ -706,15 +784,15 @@ _COLOR_TIER_RANK = {"green": 3, "blue": 2, "yellow": 1, "red": 0}
 def best_signal_for_game(signals: list) -> Optional[dict]:
     """
     Un solo pick representativo por partido entre todos sus mercados (ML/
-    Spread/Total): el de mayor jerarquia de color (verde > azul > amarillo >
-    rojo) y, dentro de la misma jerarquia, el de mejor ranking_edge. Antes
-    ML/Spread/Total de un mismo partido se clasificaban y mostraban de
-    forma independiente, así que el mismo partido podía aparecer en SÓLIDO
-    por su ML y en PROBABLE por su Spread al mismo tiempo (bug diagnosticado
-    en TODAS las secciones de clasificación). Esta función centraliza el
+    Spread/Total): el de mayor jerarquia de color (verde > azul > rojo) y,
+    dentro de la misma jerarquia, el de mejor ranking_edge. Antes ML/Spread/
+    Total de un mismo partido se clasificaban y mostraban de forma
+    independiente, así que el mismo partido podía aparecer en SÓLIDO por su
+    ML y en PROBABLE por su Spread al mismo tiempo (bug diagnosticado en
+    TODAS las secciones de clasificación). Esta función centraliza el
     criterio de "cuál es EL pick de este partido" para que best_market() y
-    los buckets de get_dashboard() (SÓLIDO/PROBABLE/ESPECULATIVO/EVITAR)
-    nunca puedan volver a divergir entre sí.
+    los buckets de get_dashboard() (SÓLIDO/PROBABLE/EVITAR) nunca puedan
+    volver a divergir entre sí.
     """
     cands = [s for s in (signals or []) if s.get("ev") is not None]
     if not cands:
@@ -765,40 +843,6 @@ def game_prediction_full(game: dict, sport: str) -> dict:
         "mode":        "full",
     }
 
-
-# ---------------------------------------------------------------------------
-# Ranking Kelly
-# ---------------------------------------------------------------------------
-def build_kelly_ranking(all_signals: list) -> tuple[list, Optional[dict]]:
-    """
-    Un pick por partido para la pestaña Ranking Kelly: el de mayor
-    kelly_score entre ML/Spread/Total de ese partido. Solo entran los que
-    superan KELLY_MIN_SCORE — por debajo, el partido directamente no
-    aparece en el ranking (no se marca EVITAR, no hay fila para el).
-
-    Si NINGUN partido llega al piso ese dia, devuelve el mas cercano aparte
-    (near_miss) para que la pestaña pueda explicar el vacío en vez de
-    mostrar nada sin contexto.
-    """
-    best_per_game: dict[str, dict] = {}
-    for s in all_signals:
-        game = s.get("game")
-        if game is None:
-            continue
-        score = s.get("kelly_score") or 0.0
-        if game not in best_per_game or score > (best_per_game[game].get("kelly_score") or 0.0):
-            best_per_game[game] = s
-
-    candidates = list(best_per_game.values())
-    ranked = sorted(
-        [s for s in candidates if (s.get("kelly_score") or 0.0) >= KELLY_MIN_SCORE],
-        key=lambda s: s.get("kelly_score") or 0.0,
-        reverse=True,
-    )
-    near_miss = None
-    if not ranked and candidates:
-        near_miss = max(candidates, key=lambda s: s.get("kelly_score") or -999.0)
-    return ranked, near_miss
 
 # ---------------------------------------------------------------------------
 # Tickets
@@ -1033,23 +1077,26 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
         "sports":           {},
         "all_games":        [],
 
-        # Eficiencia (MLB/NBA/NHL) — TODAS las señales del día (ML/Spread/
+        # Todos los Juegos — cartelera del día sin predicción (equipos,
+        # horario, liga). Version liviana de all_games, sin ml/spread/total.
+        "schedule": [],
+
+        # Apuestas EV (MLB/NBA/NHL) — TODAS las señales del día (ML/Spread/
         # Total, todos los partidos), coloreadas según su clasificación real
         # (classify_efficiency decide el color, no la visibilidad). Estas
         # listas nunca se filtran ni se vacían por "no hay SÓLIDO/PROBABLE
         # suficiente": siempre muestran el mercado completo, por EV.
         "efficiency_green":  [],
         "efficiency_blue":   [],
-        "efficiency_yellow": [],
         "avoid": [],
-
-        # Ranking Kelly — pestaña nueva en paralelo (ver build_kelly_ranking).
-        # Un pick por partido, solo si supera KELLY_MIN_SCORE.
-        "kelly_ranking":  [],
-        "kelly_near_miss": None,
 
         # Tickets
         "ticket_efficiency": None,
+
+        # Documenta que criterio de fair price se uso por señal (ancla sharp
+        # vs consenso), agregado sobre todas las señales del día — ver
+        # sharp_or_consensus_fair(). Visible en Debug.
+        "edge_source_stats": {},
 
         "warnings": [],
     }
@@ -1068,6 +1115,13 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
             }
             for g in games:
                 dash["all_games"].append(game_prediction_full(g, label))
+                dash["schedule"].append({
+                    "sport":      label,
+                    "game":       f"{g.get('away_team')} vs {g.get('home_team')}",
+                    "home_team":  g.get("home_team"),
+                    "away_team":  g.get("away_team"),
+                    "start_time": g.get("commence_time"),
+                })
         except Exception as e:
             logger.error("Error %s: %s", label, e, exc_info=True)
             dash["sports"][label] = {"ok": False, "sport_key": key, "error": str(e)}
@@ -1080,14 +1134,13 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
     # SÓLIDO/PROBABLE quedan con sorter_ev: ya estan protegidos por el piso
     # de probabilidad de classify_efficiency, ahi 'ev' no tiene el sesgo.
     sorter_rank = lambda x: ranking_edge(x)
-    # Tickets/Parlays y Ranking Kelly comparten este criterio (ver
-    # kelly_score): el mismo número decide qué aparece y en qué orden en
-    # las dos pestañas, para que no se contradigan entre sí.
+    # Tickets/Parlays comparten este criterio (ver kelly_score): el mismo
+    # número decide qué patas entran y en qué orden en los parlays.
     sorter_kelly = lambda x: x.get("kelly_score") or 0.0
 
-    # Todas las señales del día en un solo pool — base de Eficiencia, Alta
-    # Prob y Parlays. No se colapsa a "1 mejor pick por juego": cada
-    # mercado de cada partido aparece con su color real.
+    # Todas las señales del día en un solo pool — base de Apuestas Edge/EV y
+    # Parlays. No se colapsa a "1 mejor pick por juego": cada mercado de
+    # cada partido aparece con su color real.
     all_signals = []
     for full in dash["all_games"]:
         for mkey in ("ml", "spread", "total"):
@@ -1095,15 +1148,14 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
                 all_signals.append({**sig, "game": full["game"], "start_time": full["start_time"]})
     all_signals = dedupe(all_signals)
 
-    dash["kelly_ranking"], dash["kelly_near_miss"] = build_kelly_ranking(all_signals)
+    dash["edge_source_stats"] = dict(Counter(s.get("fair_source", "consensus") for s in all_signals))
 
-    # Un solo pick por partido en SÓLIDO/PROBABLE/ESPECULATIVO/EVITAR (ver
+    # Un solo pick por partido en SÓLIDO/PROBABLE/EVITAR (ver
     # best_signal_for_game): antes cada mercado (ML/Spread/Total) de cada
     # partido se clasificaba y listaba por separado, así que un mismo
     # partido podía aparecer repartido entre dos o más de estas secciones a
-    # la vez. Solo estas 4 listas se consolidan — Ranking Kelly, Tickets/
-    # Parlays, "Todos los Juegos" y "Alta Prob" siguen usando all_signals
-    # sin agrupar, tal como antes.
+    # la vez. Solo estas listas se consolidan — Tickets/Parlays y "Apuestas
+    # Edge" siguen usando all_signals/all_games sin agrupar, tal como antes.
     signals_by_game: dict = {}
     for s in all_signals:
         signals_by_game.setdefault(s.get("game"), []).append(s)
@@ -1112,12 +1164,6 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
 
     dash["efficiency_green"]  = sorted([s for s in game_best if s.get("color") == "green"],  key=sorter_ev, reverse=True)
     dash["efficiency_blue"]   = sorted([s for s in game_best if s.get("color") == "blue"],   key=sorter_ev, reverse=True)
-    # yellow (ESPECULATIVO) ya exige su propio piso de EV para entrar (ver
-    # EFFICIENCY_MIN_EV_YELLOW en classify_efficiency), pero dentro del tier
-    # se ordena por ranking_edge igual que avoid: el piso de probabilidad es
-    # mas bajo que green/blue, asi que el sesgo de EV hacia cuota alta que
-    # ranking_edge corrige pesa mas aca en el orden interno.
-    dash["efficiency_yellow"] = sorted([s for s in game_best if s.get("color") == "yellow"], key=sorter_rank, reverse=True)
     dash["avoid"]             = sorted([s for s in game_best if s.get("color") == "red"],    key=sorter_rank, reverse=True)
 
     # Ticket Eficiencia: producto curado (requiere green/blue), queda
@@ -1151,19 +1197,6 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
     dash["ticket_mltotal_3"]  = build_mltotal_ticket("🎯 Parlay ML+Total — 3 Juegos",  _parlay_pool_mltotal, 3,  "yellow", "Bajo",  "3 mejores juegos del día por Score Kelly combinado (ML+Total).")
     dash["ticket_mltotal_6"]  = build_mltotal_ticket("🔥 Parlay ML+Total — 6 Juegos",  _parlay_pool_mltotal, 6,  "yellow", "Medio", "6 mejores juegos del día por Score Kelly combinado (ML+Total).")
     dash["ticket_mltotal_10"] = build_mltotal_ticket("⭐ Parlay ML+Total — 10 Juegos", _parlay_pool_mltotal, 10, "yellow", "Alto",  "10 mejores juegos del día por Score Kelly combinado (ML+Total).")
-
-    # Alta Prob: prioriza ≥65% (su propósito), pero nunca vacía la pestaña
-    # por eso. by_prob ya viene ordenado descendente por probabilidad, asi
-    # que los ≥65% (si hay) quedan siempre primero en by_prob[:20] — no hace
-    # falta un fallback aparte. El bug anterior era `(high_prob_65 or
-    # by_prob)[:20]`: si high_prob_65 tenia 1-19 items (no 0), se mostraban
-    # SOLO esos en vez de rellenar hasta 20 con el resto del dia — un dia
-    # con 5 picks ≥65% mostraba 5 en vez de 20. high_prob_goal_count expone
-    # cuantos de los mostrados alcanzan el objetivo real, para que el
-    # frontend distinga "el mejor disponible hoy" de "cumple el objetivo".
-    by_prob = sorted(all_signals, key=lambda x: x.get("probability") or 0, reverse=True)
-    dash["high_prob"] = by_prob[:20]
-    dash["high_prob_goal_count"] = sum(1 for p in by_prob if (p.get("probability") or 0) >= 65.0)
 
     return dash
 
