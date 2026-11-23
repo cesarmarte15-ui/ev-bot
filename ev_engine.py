@@ -136,6 +136,30 @@ def _cache_set(key: str, data: list) -> None:
         _cache[key] = (time.time(), data)
 
 # ---------------------------------------------------------------------------
+# Histéresis de tier SÓLIDO (ver classify_efficiency) — último tier
+# confirmado por pick (game+market+selection), en memoria, sobrevive a
+# force_refresh a propósito: el objetivo es amortiguar el parpadeo entre
+# escaneos, así que limpiar la caché de cuotas no debe resetear esto.
+# ---------------------------------------------------------------------------
+EFFICIENCY_GREEN_EXIT_EV_BUFFER   = 0.5
+EFFICIENCY_GREEN_EXIT_EDGE_BUFFER = 0.5
+
+_tier_lock = threading.Lock()
+_tier_state: dict[str, str] = {}
+
+def _prev_tier(pick_id: Optional[str]) -> Optional[str]:
+    if not pick_id:
+        return None
+    with _tier_lock:
+        return _tier_state.get(pick_id)
+
+def _remember_tier(pick_id: Optional[str], color: str) -> None:
+    if not pick_id:
+        return
+    with _tier_lock:
+        _tier_state[pick_id] = color
+
+# ---------------------------------------------------------------------------
 # Matemáticas
 # ---------------------------------------------------------------------------
 def clamp(v, lo, hi):
@@ -569,18 +593,32 @@ def efficiency_failure_reason(prob, val, ev, odds, odds_ok, books=None, books_ok
         return "No cumple criterios de eficiencia."
     return "Falla: " + " · ".join(fails)
 
-def classify_efficiency(prob, val, ev, edge, odds, books=None) -> tuple[str, str, str, str]:
+def classify_efficiency(prob, val, ev, edge, odds, books=None, pick_id: Optional[str] = None) -> tuple[str, str, str, str]:
     ev    = ev or 0.0
     edge  = edge or 0.0
     odds_ok  = odds is None or odds >= EFFICIENCY_MAX_ODDS
     books_ok = books is not None and books >= EFFICIENCY_MIN_BOOKS
 
-    if (ev >= EFFICIENCY_MIN_EV_GREEN and prob >= EFFICIENCY_MIN_PROB and val >= EFFICIENCY_MIN_VAL
-            and edge >= EFFICIENCY_MIN_EDGE_GREEN and odds_ok and books_ok):
+    # Histéresis del piso de SÓLIDO: sin esto, un pick justo en el borde
+    # (EV/edge apenas sobre el piso) entra y sale de SÓLIDO con el ruido
+    # normal de cuotas en vivo entre cada "Actualizar" (force_refresh trae
+    # precios nuevos de verdad, no cacheados). Si el pick YA estaba SÓLIDO
+    # en el scan anterior, se le exige caer mas de EFFICIENCY_GREEN_EXIT_*
+    # por debajo del piso normal (no apenas cruzarlo) para bajarlo de tier.
+    min_ev_green   = EFFICIENCY_MIN_EV_GREEN
+    min_edge_green = EFFICIENCY_MIN_EDGE_GREEN
+    if _prev_tier(pick_id) == "green":
+        min_ev_green   -= EFFICIENCY_GREEN_EXIT_EV_BUFFER
+        min_edge_green -= EFFICIENCY_GREEN_EXIT_EDGE_BUFFER
+
+    if (ev >= min_ev_green and prob >= EFFICIENCY_MIN_PROB and val >= EFFICIENCY_MIN_VAL
+            and edge >= min_edge_green and odds_ok and books_ok):
+        _remember_tier(pick_id, "green")
         return "green", "🔒 SÓLIDO", "Favorito con alta probabilidad y buen valor.", "0.5u-1u"
 
     if (ev >= EFFICIENCY_MIN_EV_BLUE and prob >= 58 and val >= 60 and edge >= EFFICIENCY_MIN_EDGE_BLUE
             and odds_ok and books_ok):
+        _remember_tier(pick_id, "blue")
         return "blue", "📌 PROBABLE", "Alta probabilidad pero precio ajustado.", "0.25u"
 
     # Ex-tier ESPECULATIVO (eliminado como categoria propia): estas señales
@@ -596,6 +634,7 @@ def classify_efficiency(prob, val, ev, edge, odds, books=None) -> tuple[str, str
     # EV% promedio +0.66%; 21 correctamente a EVITAR, EV% promedio -1.31%).
     if (ev >= EFFICIENCY_MIN_EV_BLUE and prob >= PROBABLE_FALLBACK_MIN_PROB and val >= PROBABLE_FALLBACK_MIN_VAL
             and odds_ok and books_ok):
+        _remember_tier(pick_id, "blue")
         return "blue", "📌 PROBABLE", "Probabilidad moderada con EV real dentro del piso — mayor riesgo que el gate normal.", "0.1u-0.25u"
 
     # Salvaguarda: un EV real positivo nunca debe terminar en EVITAR aunque
@@ -605,9 +644,11 @@ def classify_efficiency(prob, val, ev, edge, odds, books=None) -> tuple[str, str
     # sesgo de Validación que se esta corrigiendo, son filtros de calidad de
     # dato (precio demasiado corto / poca corroboracion entre casas).
     if ev > 0 and odds_ok and books_ok:
+        _remember_tier(pick_id, "blue")
         return "blue", "📌 PROBABLE", f"EV real positivo ({ev:.1f}%) pero no cumple el resto de las compuertas de calidad.", "0.1u"
 
     reason = efficiency_failure_reason(prob, val, ev, odds, odds_ok, books, books_ok)
+    _remember_tier(pick_id, "red")
     return "red", "⚠ EVITAR", reason, "0u"
 
 # ---------------------------------------------------------------------------
@@ -640,7 +681,8 @@ def moneyline_efficiency(game: dict, sport: str) -> list[dict]:
         ev, edge = safe_ev_edge(p, odds)
         books = counts.get((name, _point), 0)
         val   = smooth_validation(prob, odds, books, ev, edge)
-        color, label, reason, stake = classify_efficiency(prob, val, ev, edge, odds, books)
+        pick_id = f"{sport}:{game.get('away_team')}@{game.get('home_team')}:{game.get('commence_time')}:ML:{name}"
+        color, label, reason, stake = classify_efficiency(prob, val, ev, edge, odds, books, pick_id=pick_id)
 
         fd_odds = fanduel_price(outs, name)
         signals.append(enrich({
@@ -697,7 +739,8 @@ def spread_signals(game: dict, sport: str) -> list[dict]:
         ev, edge = safe_ev_edge(p, odds)
         books = counts.get((name, point), 0)
         val   = smooth_validation(prob, odds, books, ev, edge)
-        color, label, reason, stake = classify_efficiency(prob, val, ev, edge, odds, books)
+        pick_id = f"{sport}:{game.get('away_team')}@{game.get('home_team')}:{game.get('commence_time')}:SPR:{name}:{point}"
+        color, label, reason, stake = classify_efficiency(prob, val, ev, edge, odds, books, pick_id=pick_id)
         fd_odds   = fanduel_price(outs, name, point)
         point_str = (f"+{point}" if (point or 0) > 0 else str(point)) if point is not None else ""
         selection = f"{name} {point_str}".strip()
@@ -746,7 +789,8 @@ def total_signals(game: dict, sport: str) -> list[dict]:
         ev, edge = safe_ev_edge(p, odds)
         books = counts.get((name, point), 0)
         val   = smooth_validation(prob, odds, books, ev, edge)
-        color, label, reason, stake = classify_efficiency(prob, val, ev, edge, odds, books)
+        pick_id = f"{sport}:{game.get('away_team')}@{game.get('home_team')}:{game.get('commence_time')}:TOT:{name}:{point}"
+        color, label, reason, stake = classify_efficiency(prob, val, ev, edge, odds, books, pick_id=pick_id)
         fd_odds   = fanduel_price(outs, name, point)
         point_str = str(point) if point is not None else ""
         signals.append(enrich({
