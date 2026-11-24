@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>EV Bot Pro v8.5</title>
+<title>EV Bot Pro v8.7</title>
 <style>
   :root {
     --bg:#141a24; --bg2:#1e2a3a; --bg3:#232b3e; --border:#2e3a52;
@@ -207,6 +207,20 @@
     padding:10px 16px;display:flex;align-items:center;gap:12px;margin-bottom:20px;
     font-size:12px;color:var(--muted);flex-wrap:wrap}
 
+  /* CREDITOS API */
+  .credits{font-weight:700;padding:2px 8px;border-radius:6px;background:var(--bg3);color:var(--text)}
+  .credits.low{background:var(--yellow-dim);color:var(--yellow);border:1px solid var(--yellow)}
+  .credits.saving{background:var(--red-dim);color:var(--red);border:1px solid var(--red)}
+
+  /* CASA DONDE APOSTAR */
+  .book-line{font-weight:700;color:var(--text)}
+
+  /* CUOTAS ALTAS */
+  .payout{background:var(--gold-dim);border:1px solid var(--gold);border-radius:7px;
+    padding:10px 12px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .payout-main{font-size:15px;font-weight:800;color:var(--gold)}
+  .payout-sub{font-size:11px;color:var(--muted)}
+
   @media(max-width:600px){
     main{padding:14px} .cards-grid{grid-template-columns:1fr}
     .tabs{padding:12px 14px 0} header{padding:12px 14px}
@@ -219,7 +233,7 @@
   <div class="logo">
     <span class="logo-icon">📊</span>
     <span class="logo-text">EV Bot Pro</span>
-    <span class="version-badge">v8.5</span>
+    <span class="version-badge">v8.7</span>
   </div>
   <div class="header-datetime" id="header-datetime">🕐 --</div>
   <div class="header-right">
@@ -231,9 +245,11 @@
 </header>
 
 <div class="tabs">
-  <button class="tab active" onclick="showTab('todos')" id="tab-todos">📋 Todos los Juegos</button>
+  <button class="tab active" onclick="showTab('top')" id="tab-top">⭐ Mejores Jugadas</button>
+  <button class="tab" onclick="showTab('todos')"     id="tab-todos">📋 Todos los Juegos</button>
   <button class="tab" onclick="showTab('edge')"      id="tab-edge">🎯 Apuestas Edge</button>
   <button class="tab" onclick="showTab('ev')"        id="tab-ev">📊 Apuestas EV</button>
+  <button class="tab" onclick="showTab('high')"      id="tab-high">💰 Cuotas Altas</button>
   <button class="tab" onclick="showTab('tickets')"   id="tab-tickets">🎟 Tickets</button>
   <button class="tab" onclick="showTab('debug')"     id="tab-debug">🛠 Debug</button>
 </div>
@@ -247,8 +263,18 @@
   <div id="global-warnings"></div>
   <div id="cache-info"></div>
 
+  <!-- MEJORES JUGADAS DEL DIA -->
+  <div class="tab-content active" id="content-top">
+    <div class="section-header">
+      <span class="section-title">⭐ Mejores Jugadas del Día — todas las ligas</span>
+      <span class="section-count" id="top-count">0</span>
+    </div>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Las 5 mejores del día, un pick por partido, con su etiqueta de calidad. Primero SÓLIDO, después PROBABLE; si no alcanzan, se completa con EVITAR (marcadas como no jugables) para que veas qué hay en el mercado.</p>
+    <div class="cards-grid" id="top-grid"></div>
+  </div>
+
   <!-- TODOS LOS JUEGOS -->
-  <div class="tab-content active" id="content-todos">
+  <div class="tab-content" id="content-todos">
     <div class="section-header">
       <span class="section-title">📋 Todos los Juegos — Cartelera del día</span>
       <span class="section-count" id="schedule-count">0</span>
@@ -275,7 +301,7 @@
       <span class="section-title">🔒 Sólido</span>
       <span class="section-count" id="eff-green-count">0</span>
     </div>
-    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">MLB · NBA · NHL — Favoritos con ≥60% de probabilidad y edge real positivo.</p>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Todas las ligas — Favoritos con ≥60% de probabilidad y edge real positivo.</p>
     <div class="cards-grid" id="efficiency-green-grid"></div>
 
     <div class="section-header" style="margin-top:36px">
@@ -291,6 +317,16 @@
     </div>
     <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Picks que no cumplen criterios en ningún mercado hoy.</p>
     <div class="cards-grid" id="avoid-grid"></div>
+  </div>
+
+  <!-- CUOTAS ALTAS -->
+  <div class="tab-content" id="content-high">
+    <div class="section-header">
+      <span class="section-title">💰 Cuotas Altas — underdogs con EV positivo</span>
+      <span class="section-count" id="high-count">0</span>
+    </div>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:16px" id="high-desc">Underdogs con EV positivo contra el precio justo de Pinnacle. Pegan menos seguido: son para stakes chicos.</p>
+    <div class="cards-grid" id="high-grid"></div>
   </div>
 
   <!-- TICKETS -->
@@ -387,7 +423,7 @@ function setStatus(state, data) {
 }
 
 function showLoading() {
-  ['schedule-list','edge-list','ev-summary','efficiency-green-grid','efficiency-blue-grid',
+  ['top-grid','high-grid','schedule-list','edge-list','ev-summary','efficiency-green-grid','efficiency-blue-grid',
    'avoid-grid','parlays-container','parlays-mltotal-container','tickets-container','debug-container'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.innerHTML = `<div class="loading-overlay"><div class="loading-spinner"></div> Cargando...</div>`;
@@ -399,9 +435,11 @@ function renderAll(data) {
   const gw = document.getElementById('global-warnings');
   if (gw) gw.innerHTML = warningsBanner(data.warnings);
   renderCacheInfo(data);
+  renderTopPlays(data);
   renderSchedule(data);
   renderEdge(data);
   renderEv(data);
+  renderHighOdds(data);
   renderParlays(data);
   renderParlaysMlTotal(data);
   renderTickets(data);
@@ -423,14 +461,34 @@ function renderCacheInfo(data) {
   const ageStr = ageSec == null ? ''
     : ageSec < 60 ? 'recién actualizadas'
     : `hasta ${Math.floor(ageSec/60)}m de antigüedad`;
+  const sv = Object.values(sports);
+  const withGames = sv.filter(s => s.ok && !s.skipped && (s.games_count || 0) > 0).length;
+  const failed    = sv.filter(s => !s.ok).length;
   document.getElementById('cache-info').innerHTML = `
     <div class="cache-bar">
       <span>🕐 ${new Date().toLocaleTimeString('es')}</span>
       <span>📍 ${data.timezone || 'ET'}</span>
       ${ageStr ? `<span title="Las cuotas se re-piden cada ${Math.floor(ttl/60)} min — hasta entonces, un pick puede mostrar un precio que ya cambió en el book real">♻ Cuotas ${ageStr}</span>` : ''}
-      <span>🏆 ${['MLB','NBA','NHL'].filter(k => sports[k]?.ok).length}/3 deportes OK</span>
+      <span title="Ligas con juegos por empezar hoy / ligas configuradas">🏆 ${withGames}/${sv.length} ligas con juegos hoy${failed ? ` · ${failed} con error` : ''}</span>
       <span>📋 ${(data.all_games||[]).length} juegos evaluados</span>
+      ${creditsBadge(data.api_usage)}
     </div>`;
+}
+
+// ── CREDITOS THE ODDS API ─────────────────────────────────
+function creditsBadge(u) {
+  if (!u) return '';
+  const fmt = n => n == null ? '--' : Number(n).toLocaleString('en-US');
+  if (u.remaining == null) {
+    return `<span class="credits" title="Todavía no hubo respuesta de la API con los headers de consumo">💳 Créditos: --</span>`;
+  }
+  const cls  = u.saving_mode ? 'saving' : (u.low ? 'low' : '');
+  const warn = u.saving_mode ? ' · ⛔ modo ahorro'
+             : u.low ? ` · ⚠ menos del ${u.low_threshold_pct}%` : '';
+  const tip  = `Hoy: ${fmt(u.spent_today)} de ${fmt(u.daily_allowance)} créditos permitidos · `
+             + `${u.cost_per_league} créditos por liga · actualiza cada ${u.refresh_interval_min} min`
+             + (u.billing_reset_day ? ` · reinicio día ${u.billing_reset_day}` : ' · día de reinicio no configurado (se asume el 1)');
+  return `<span class="credits ${cls}" title="${escAttr(tip)}">💳 ${fmt(u.remaining)} / ${fmt(u.total)} créditos (${u.pct_remaining}%)${warn}</span>`;
 }
 
 // ── AVISOS ────────────────────────────────────────────────
@@ -455,6 +513,63 @@ function classificationSummary(data) {
       <div class="stat-tile green"><div class="stat-tile-value">${green}</div><div class="stat-tile-label">🔒 SÓLIDO</div></div>
       <div class="stat-tile blue"><div class="stat-tile-value">${blue}</div><div class="stat-tile-label">📌 PROBABLE</div></div>
       <div class="stat-tile red"><div class="stat-tile-value">${red}</div><div class="stat-tile-label">⚠ EVITAR</div></div>
+    </div>`;
+}
+
+// ── MEJORES JUGADAS DEL DIA ───────────────────────────────
+function renderTopPlays(data) {
+  const picks = data.top_plays || [];
+  const el = document.getElementById('top-grid');
+  const ct = document.getElementById('top-count');
+  if (ct) ct.textContent = picks.length;
+  el.innerHTML = picks.length
+    ? picks.map(renderCard).join('')
+    : `<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-msg">No hay juegos por empezar hoy en ninguna liga.</div></div>`;
+}
+
+// ── CUOTAS ALTAS ──────────────────────────────────────────
+function renderHighOdds(data) {
+  const picks = data.high_odds || [];
+  const [lo, hi] = data.high_odds_range || [150, 500];
+  const el = document.getElementById('high-grid');
+  const ct = document.getElementById('high-count');
+  const desc = document.getElementById('high-desc');
+  if (ct) ct.textContent = picks.length;
+  if (desc) desc.textContent = `Underdogs entre +${lo} y +${hi} con EV positivo contra el precio justo de Pinnacle. Pegan menos seguido: son para stakes chicos.`;
+  el.innerHTML = picks.length
+    ? picks.map(renderHighOddsCard).join('')
+    : `<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-msg">Sin underdogs con EV positivo contra Pinnacle ahora mismo.</div></div>`;
+}
+
+function renderHighOddsCard(sig) {
+  const oddsStr  = fmtOdds(sig.odds) || '--';
+  const ev       = sig.ev != null ? '+' + sig.ev.toFixed(1) + '%' : '--';
+  const pickText = `${sig.selection||''} · ${sig.short_market||sig.market||'ML'} · ${oddsStr} · ${sig.bookmaker||''}`;
+  const tierLbl  = sig.label ? `<span class="card-stake" title="Etiqueta de calidad de Apuestas EV">${sig.label}</span>` : '';
+  return `
+    <div class="card gold">
+      <div class="card-top">
+        <span class="card-label">💰 ${oddsStr}</span>
+        <span class="card-sport">${sig.sport||''}</span>
+      </div>
+      <div class="card-game">${sig.game||''}</div>
+      <div class="card-selection">${sig.selection||''} · ${sig.short_market||sig.market||''}</div>
+      <div class="payout">
+        <div>
+          <div class="payout-main">Ganas $${(sig.profit_per_10 ?? 0).toFixed(2)} por cada $10</div>
+          <div class="payout-sub">EV esperado: +$${(sig.ev_per_10 ?? 0).toFixed(2)} por cada $10 apostados</div>
+        </div>
+        <button class="btn-copy" data-pick="${escAttr(pickText)}" onclick="copyPick(this,this.dataset.pick)">Copiar</button>
+      </div>
+      <div class="card-stats">
+        <div class="stat"><div class="stat-val">${sig.pinnacle_prob != null ? sig.pinnacle_prob.toFixed(1)+'%' : '--'}</div><div class="stat-lbl">Prob. Pinnacle</div></div>
+        <div class="stat"><div class="stat-val">${sig.implied_prob != null ? sig.implied_prob.toFixed(1)+'%' : '--'}</div><div class="stat-lbl">Prob. de la cuota</div></div>
+        <div class="stat"><div class="stat-val">${ev}</div><div class="stat-lbl">EV%</div></div>
+      </div>
+      <div class="card-footer">
+        <span class="book-line">🏦 Apostar en: ${sig.bookmaker||'--'} ${oddsStr}</span>
+        ${tierLbl}
+      </div>
     </div>`;
 }
 
@@ -577,7 +692,7 @@ function renderCard(sig) {
         <div class="stat"><div class="stat-val">${ev}</div><div class="stat-lbl">EV%</div></div>
       </div>
       <div class="card-footer">
-        <span>📚 ${sig.bookmaker||''}</span>
+        <span class="book-line">🏦 Mejor precio: ${sig.bookmaker||'--'} ${oddsStr}</span>
         <span class="card-stake">${sig.stake||'0u'}</span>
       </div>
     </div>`;
@@ -626,7 +741,7 @@ function renderEdgeCard(sig) {
         <div class="stat"><div class="stat-val">${ev}</div><div class="stat-lbl">EV%</div></div>
       </div>
       <div class="card-footer">
-        <span>📚 ${sig.bookmaker||''}</span>
+        <span class="book-line">🏦 Mejor precio: ${sig.bookmaker||'--'} ${oddsStr}</span>
       </div>
     </div>`;
 }
@@ -718,7 +833,7 @@ function renderTicketPick(p) {
   return `
     <div class="ticket-pick">
       <div class="ticket-pick-left">
-        <div class="ticket-pick-game">${p.game||''} · ${p.sport||''}</div>
+        <div class="ticket-pick-game">${p.game||''} · ${p.sport||''} · 🏦 ${p.bookmaker||'--'} ${fmtOdds(p.odds)||''}</div>
         <div class="ticket-pick-sel">${p.selection||''} · ${mkt}</div>
       </div>
       <div class="ticket-pick-right">
@@ -785,12 +900,12 @@ function renderDebug(data) {
       <td>${s.sport_key||''}</td>
       <td>${s.games_count??'--'}</td>
       <td>${s.total_api_games??'--'}</td>
-      <td>${s.from_cache?'♻ Cache':'🌐 API'}</td>
-      <td style="color:var(--red);font-size:11px">${s.ok?'':(s.error||'Error')}</td>
+      <td>${s.skipped ? '⏭ No consultada (0 créditos)' : s.stale ? '💤 Cache vieja (modo ahorro)' : s.from_cache ? '♻ Cache' : '🌐 API'}</td>
+      <td style="font-size:11px;color:${s.ok?'var(--muted)':'var(--red)'}">${s.ok ? (s.skipped||'') : (s.error||'Error')}</td>
     </tr>`).join('');
   document.getElementById('debug-container').innerHTML = `
     <table class="sports-table">
-      <thead><tr><th>Liga</th><th>API Key</th><th>Hoy</th><th>Total</th><th>Fuente</th><th>Error</th></tr></thead>
+      <thead><tr><th>Liga</th><th>API Key</th><th>Hoy</th><th>Total</th><th>Fuente</th><th>Nota</th></tr></thead>
       <tbody>${rows||'<tr><td colspan="6" style="color:var(--muted);text-align:center;padding:20px">Sin datos</td></tr>'}</tbody>
     </table>
     <div style="margin-top:16px"><button class="btn btn-outline" onclick="clearCache()">🗑 Limpiar Cache</button></div>`;
@@ -856,8 +971,16 @@ function copyParlay(btn, picks) {
 }
 
 // ── INIT ──────────────────────────────────────────────────
-loadData();
-setInterval(() => loadData(false), 15 * 60 * 1000);
+// El refresco automático sigue el intervalo configurado en el backend
+// (REFRESH_INTERVAL_MIN). Recargar antes no trae cuotas nuevas (la caché
+// del servidor dura lo mismo), solo re-renderiza.
+let autoRefreshTimer = null;
+function scheduleAutoRefresh() {
+  const min = (dashData && dashData.refresh_interval_min) || 45;
+  clearTimeout(autoRefreshTimer);
+  autoRefreshTimer = setTimeout(async () => { await loadData(false); scheduleAutoRefresh(); }, min * 60 * 1000);
+}
+loadData().then(scheduleAutoRefresh);
 </script>
 </body>
 </html>

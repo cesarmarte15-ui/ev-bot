@@ -2,7 +2,7 @@ import os
 import logging
 from flask import Flask, render_template, request, jsonify
 from dotenv import load_dotenv
-from ev_engine import SPORTS, SPORTS_EFFICIENCY, get_dashboard, debug_all_sports, clear_cache
+from ev_engine import SPORTS, SPORTS_EFFICIENCY, get_dashboard, debug_all_sports, clear_cache, usage_status
 
 load_dotenv()
 
@@ -24,7 +24,7 @@ def api_dashboard():
     try:
         selected = request.args.getlist("sports") or ["ALL"]
         force    = request.args.get("refresh", "0") == "1"
-        logger.info("Dashboard v8.5: sports=%s force=%s", selected, force)
+        logger.info("Dashboard v8.7: sports=%s force=%s", selected, force)
         data = get_dashboard(selected, force_refresh=force)
         return jsonify(data)
     except Exception as e:
@@ -34,12 +34,13 @@ def api_dashboard():
             "sports": {}, "games": [], "schedule": [],
             "efficiency_green": [], "efficiency_blue": [],
             "green": [], "blue": [], "red": [],
-            "tickets": [],
+            "tickets": [], "top_plays": [], "high_odds": [],
+            "api_usage": usage_status(),
         }), 500
 
 @app.route("/api/efficiency")
 def api_efficiency():
-    """Solo picks de eficiencia MLB/NBA/NHL."""
+    """Solo picks de eficiencia (todas las ligas)."""
     try:
         force = request.args.get("refresh", "0") == "1"
         data  = get_dashboard(["ALL"], force_refresh=force)
@@ -75,6 +76,11 @@ def api_debug():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
+@app.route("/api/usage")
+def api_usage():
+    """Créditos de The Odds API (último valor visto en los headers)."""
+    return jsonify({"ok": True, **usage_status()})
+
 @app.route("/api/clear-cache")
 def api_clear_cache():
     clear_cache()
@@ -82,7 +88,7 @@ def api_clear_cache():
 
 @app.route("/health")
 def health():
-    return jsonify({"ok": True, "version": "8.6"})
+    return jsonify({"ok": True, "version": "8.7"})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))

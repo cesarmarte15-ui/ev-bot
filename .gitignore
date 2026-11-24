@@ -12,3 +12,7 @@ scripts/model/data/processed/
 scripts/model/artifacts/
 scripts/model/logs/
 scripts/model/.venv/
+
+# Contador de creditos de The Odds API (estado local, ver ev_engine.USAGE_FILE)
+.api_usage.json
+.api_usage.json.tmp

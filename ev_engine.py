@@ -5,12 +5,14 @@ ev_engine_v8.5.py
 """
 
 import os
+import json
+import math
 import time
 import logging
 import threading
 import requests
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timedelta, timezone, date
 from zoneinfo import ZoneInfo
 from typing import Optional
 from dotenv import load_dotenv
@@ -27,13 +29,39 @@ logger = logging.getLogger("ev_engine")
 # Config
 # ---------------------------------------------------------------------------
 API_KEY: str = os.getenv("ODDS_API_KEY", "")
+API_BASE: str = "https://api.the-odds-api.com/v4"
 
-SPORTS_EFFICIENCY: dict[str, str] = {
-    "MLB": "baseball_mlb",
-    "NBA": "basketball_nba",
-    "NHL": "icehockey_nhl",
+# Catálogo completo de ligas (etiqueta -> sport key de The Odds API). Solo se
+# piden cuotas (/odds, cuesta créditos) de las que tienen juegos por empezar
+# hoy según /sports y /events (gratis) — ver active_league_events().
+ALL_LEAGUES: dict[str, str] = {
+    "NFL":          "americanfootball_nfl",
+    "NCAAF":        "americanfootball_ncaaf",
+    "NCAAB":        "basketball_ncaab",
+    "NBA":          "basketball_nba",
+    "NHL":          "icehockey_nhl",
+    "MLB":          "baseball_mlb",
+    "EPL":          "soccer_epl",
+    "La Liga":      "soccer_spain_la_liga",
+    "Champions":    "soccer_uefa_champs_league",
+    "Liga MX":      "soccer_mexico_ligamx",
+    # Ligas menos seguidas: las casas de EE.UU. les dedican menos atención,
+    # así que sus precios se alejan más del de Pinnacle.
+    "Championship": "soccer_efl_champ",
+    "Portugal":     "soccer_portugal_primeira_liga",
+    "Eredivisie":   "soccer_netherlands_eredivisie",
 }
 
+def _env_leagues() -> dict[str, str]:
+    """LEAGUES=NFL,NBA,EPL (etiquetas de ALL_LEAGUES) para limitar la lista
+    sin tocar código. Vacío = todas."""
+    raw = os.getenv("LEAGUES", "").strip()
+    if not raw:
+        return dict(ALL_LEAGUES)
+    wanted = [x.strip() for x in raw.split(",") if x.strip()]
+    return {k: v for k, v in ALL_LEAGUES.items() if k in wanted}
+
+SPORTS_EFFICIENCY: dict[str, str] = _env_leagues()
 SPORTS: dict[str, str] = SPORTS_EFFICIENCY
 
 REGIONS: str     = os.getenv("REGIONS", "us")
@@ -41,7 +69,53 @@ MARKETS: str     = os.getenv("MARKETS", "h2h,spreads,totals")
 ODDS_FORMAT: str = "american"
 LOCAL_TZ: str    = os.getenv("LOCAL_TZ", "America/New_York")
 ONLY_TODAY: bool = os.getenv("ONLY_TODAY", "1") == "1"
-CACHE_TTL: int   = int(os.getenv("CACHE_TTL", "900"))
+
+# Casas pedidas a la API. Con el parámetro 'bookmakers' cada grupo de hasta
+# 10 casas cuesta lo mismo que 1 región, así que Pinnacle (región eu) entra
+# sin pagar una segunda región. Si BOOKMAKERS queda vacío se usa REGIONS.
+# Caesars en The Odds API es 'williamhill_us'. bet365 no está disponible
+# para EE.UU. en The Odds API (solo bet365_au), por eso no se pide.
+BOOKMAKERS: list[str] = [b.strip() for b in os.getenv(
+    "BOOKMAKERS",
+    "pinnacle,fanduel,draftkings,betmgm,williamhill_us,fanatics,betrivers,lowvig,betonlineag",
+).split(",") if b.strip()]
+
+# Casas donde el usuario puede apostar (legales en NJ). El MEJOR PRECIO de
+# cada señal se busca solo entre estas; Pinnacle/LowVig/BetOnline se usan
+# como ancla del precio justo y para corroboración (book_count), nunca como
+# casa recomendada. 'caesars' y 'bet365' quedan por si la API los devuelve
+# con esa clave.
+BETTABLE_BOOKS: set[str] = {b.strip() for b in os.getenv(
+    "BETTABLE_BOOKS",
+    "fanduel,draftkings,betmgm,williamhill_us,caesars,fanatics,betrivers,bet365",
+).split(",") if b.strip()}
+
+# Intervalo de actualización de cuotas (minutos). Es el TTL de la caché de
+# /odds: ninguna liga se vuelve a pedir antes de que pase. Mínimo 20.
+REFRESH_INTERVAL_MIN: int = max(20, int(os.getenv("REFRESH_INTERVAL_MIN", "45")))
+CACHE_TTL: int = REFRESH_INTERVAL_MIN * 60
+# El botón "Actualizar" solo vuelve a pedir una liga si sus cuotas tienen
+# más de estos minutos (evita quemar créditos con clicks repetidos).
+MIN_FORCE_REFRESH_MIN: int = int(os.getenv("MIN_FORCE_REFRESH_MIN", "10"))
+# TTL de /sports y /events (gratis, pero no hace falta pedirlos en cada carga).
+EVENTS_TTL: int = int(os.getenv("EVENTS_TTL_MIN", "30")) * 60
+SPORTS_LIST_TTL: int = 6 * 3600
+
+# Presupuesto de créditos. MONTHLY_CREDIT_BUDGET es la meta de consumo
+# (debajo del total del plan, con margen). BILLING_RESET_DAY = día del mes
+# en que The Odds API reinicia la cuota (vacío = se asume el día 1).
+MONTHLY_CREDIT_BUDGET: int = int(os.getenv("MONTHLY_CREDIT_BUDGET", "18000"))
+PLAN_CREDITS: int = int(os.getenv("PLAN_CREDITS", "20000"))
+BILLING_RESET_DAY: Optional[int] = int(os.getenv("BILLING_RESET_DAY")) if os.getenv("BILLING_RESET_DAY", "").strip() else None
+BUDGET_GUARD: bool = os.getenv("BUDGET_GUARD", "1") == "1"
+LOW_CREDITS_PCT: float = 20.0
+USAGE_FILE: str = os.getenv("USAGE_FILE", os.path.join(os.path.dirname(os.path.abspath(__file__)), ".api_usage.json"))
+
+# Cuotas Altas: underdogs con EV positivo contra Pinnacle.
+HIGH_ODDS_MIN: int   = int(os.getenv("HIGH_ODDS_MIN", "150"))
+HIGH_ODDS_MAX: int   = int(os.getenv("HIGH_ODDS_MAX", "500"))
+HIGH_ODDS_LIMIT: int = int(os.getenv("HIGH_ODDS_LIMIT", "15"))
+TOP_PLAYS_COUNT: int = int(os.getenv("TOP_PLAYS_COUNT", "5"))
 
 # Umbrales
 EFFICIENCY_MIN_PROB     = 60.0   # % mínimo para pick eficiente
@@ -120,16 +194,29 @@ def clear_cache() -> None:
     with _cache_lock:
         _cache.clear()
 
-def _cache_get(key: str) -> Optional[tuple[list, int]]:
+def _cache_get(key: str, ttl: Optional[int] = None) -> Optional[tuple[list, int]]:
+    ttl = CACHE_TTL if ttl is None else ttl
     with _cache_lock:
         entry = _cache.get(key)
         if entry is None:
             return None
         ts, data = entry
-        remaining = CACHE_TTL - (time.time() - ts)
+        remaining = ttl - (time.time() - ts)
         if remaining <= 0:
             return None
         return data, int(remaining)
+
+def _cache_age(key: str) -> Optional[float]:
+    """Segundos desde que se guardó la entrada (vencida o no), None si no hay."""
+    with _cache_lock:
+        entry = _cache.get(key)
+        return None if entry is None else time.time() - entry[0]
+
+def _cache_get_stale(key: str) -> Optional[list]:
+    """Devuelve la entrada aunque esté vencida (modo ahorro de créditos)."""
+    with _cache_lock:
+        entry = _cache.get(key)
+        return None if entry is None else entry[1]
 
 def _cache_set(key: str, data: list) -> None:
     with _cache_lock:
@@ -193,37 +280,282 @@ def api_key_status() -> str:
         return "too_short"
     return "present"
 
-def fetch_odds(sport_key: str, force_refresh: bool = False) -> tuple[list, bool, int]:
+# ---------------------------------------------------------------------------
+# Consumo de créditos (headers x-requests-* de The Odds API)
+# ---------------------------------------------------------------------------
+# Cada respuesta de la API (incluso /sports y /events, que no cuestan) trae
+# x-requests-remaining / x-requests-used / x-requests-last. Se guardan en
+# memoria y en USAGE_FILE para que un reinicio no deje el contador en blanco.
+# 'spent_today' suma x-requests-last de las llamadas a /odds del día local:
+# es lo que compara el guardián de presupuesto (budget_allows).
+_usage_lock = threading.Lock()
+_usage: dict = {
+    "remaining": None, "used": None, "last": None, "updated_at": None,
+    "day": None, "spent_today": 0,
+}
+
+def _load_usage() -> None:
+    try:
+        with open(USAGE_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            for k in _usage:
+                if k in data:
+                    _usage[k] = data[k]
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        logger.warning("No se pudo leer %s: %s", USAGE_FILE, e)
+
+def _save_usage_locked() -> None:
+    try:
+        tmp = USAGE_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(_usage, f)
+        os.replace(tmp, USAGE_FILE)
+    except Exception as e:
+        logger.warning("No se pudo guardar %s: %s", USAGE_FILE, e)
+
+_load_usage()
+
+def _local_today() -> date:
+    return datetime.now(ZoneInfo(LOCAL_TZ)).date()
+
+def _roll_day_locked() -> None:
+    today = _local_today().isoformat()
+    if _usage.get("day") != today:
+        _usage["day"] = today
+        _usage["spent_today"] = 0
+
+def _header_int(headers, name: str) -> Optional[int]:
+    try:
+        return int(float(headers.get(name)))
+    except (TypeError, ValueError):
+        return None
+
+def _record_usage(r, counts_spend: bool) -> None:
+    rem  = _header_int(r.headers, "x-requests-remaining")
+    used = _header_int(r.headers, "x-requests-used")
+    last = _header_int(r.headers, "x-requests-last")
+    with _usage_lock:
+        _roll_day_locked()
+        if rem is not None:
+            _usage["remaining"] = rem
+        if used is not None:
+            _usage["used"] = used
+        if last is not None:
+            _usage["last"] = last
+        if rem is not None or used is not None:
+            _usage["updated_at"] = datetime.now(timezone.utc).isoformat()
+        if counts_spend and last:
+            _usage["spent_today"] = (_usage.get("spent_today") or 0) + last
+        _save_usage_locked()
+
+def odds_call_cost() -> int:
+    """Créditos que cuesta un GET /odds: mercados x regiones, donde con
+    'bookmakers' cada grupo de hasta 10 casas cuenta como 1 región."""
+    n_markets = len([m for m in MARKETS.split(",") if m.strip()])
+    if BOOKMAKERS:
+        groups = math.ceil(len(BOOKMAKERS) / 10)
+    else:
+        groups = len([x for x in REGIONS.split(",") if x.strip()])
+    return max(1, n_markets) * max(1, groups)
+
+def _days_until_reset(today: date) -> int:
+    import calendar
+    day = BILLING_RESET_DAY or 1
+    def on(y: int, m: int) -> date:
+        return date(y, m, min(day, calendar.monthrange(y, m)[1]))
+    this_month = on(today.year, today.month)
+    if this_month > today:
+        nxt = this_month
+    else:
+        y, m = (today.year + 1, 1) if today.month == 12 else (today.year, today.month + 1)
+        nxt = on(y, m)
+    return max(1, (nxt - today).days)
+
+def daily_allowance() -> int:
+    """Créditos que se pueden gastar hoy en /odds. Reparte lo que queda del
+    plan (menos una reserva) entre los días que faltan para el reinicio. La
+    reserva es la proporción (1 - MONTHLY_CREDIT_BUDGET/PLAN_CREDITS) del
+    plan real según los headers: con 18,000/20,000 se guarda el 10%. Se
+    calcula con lo que quedaba al EMPEZAR el día (remaining + spent_today)
+    para que el cupo no se achique a medida que se gasta."""
+    with _usage_lock:
+        _roll_day_locked()
+        remaining = _usage.get("remaining")
+        used      = _usage.get("used") or 0
+        spent     = _usage.get("spent_today") or 0
+    if remaining is None:
+        return MONTHLY_CREDIT_BUDGET // 30
+    total = remaining + used
+    ratio = clamp(MONTHLY_CREDIT_BUDGET / PLAN_CREDITS, 0.1, 1.0) if PLAN_CREDITS > 0 else 0.9
+    reserve = total * (1.0 - ratio)
+    usable = max(0.0, remaining + spent - reserve)
+    if BILLING_RESET_DAY is None:
+        # Sin día de reinicio configurado no se sabe cuántos días faltan:
+        # cupo fijo de 1/30 de la meta mensual (600/día con 18,000), nunca
+        # más de lo que realmente queda repartido en 30 días.
+        return int(min(MONTHLY_CREDIT_BUDGET / 30, usable / 30))
+    return int(usable / _days_until_reset(_local_today()))
+
+def budget_allows(cost: int) -> bool:
+    if not BUDGET_GUARD:
+        return True
+    with _usage_lock:
+        _roll_day_locked()
+        remaining = _usage.get("remaining")
+        spent     = _usage.get("spent_today") or 0
+    if remaining is not None and remaining < cost:
+        return False
+    return spent + cost <= daily_allowance()
+
+def usage_status() -> dict:
+    with _usage_lock:
+        _roll_day_locked()
+        u = dict(_usage)
+    remaining, used = u.get("remaining"), u.get("used")
+    total = (remaining + (used or 0)) if remaining is not None else None
+    pct = round(remaining / total * 100, 1) if total else None
+    allowance = daily_allowance()
+    cost = odds_call_cost()
+    spent = u.get("spent_today") or 0
+    return {
+        "remaining":            remaining,
+        "used":                 used,
+        "total":                total,
+        "pct_remaining":        pct,
+        "low":                  pct is not None and pct < LOW_CREDITS_PCT,
+        "low_threshold_pct":    LOW_CREDITS_PCT,
+        "last_cost":            u.get("last"),
+        "updated_at":           u.get("updated_at"),
+        "spent_today":          spent,
+        "daily_allowance":      allowance,
+        "saving_mode":          BUDGET_GUARD and spent + cost > allowance,
+        "cost_per_league":      cost,
+        "refresh_interval_min": REFRESH_INTERVAL_MIN,
+        "billing_reset_day":    BILLING_RESET_DAY,
+        "monthly_budget":       MONTHLY_CREDIT_BUDGET,
+        "budget_guard":         BUDGET_GUARD,
+    }
+
+# ---------------------------------------------------------------------------
+# Llamadas HTTP
+# ---------------------------------------------------------------------------
+class BudgetExceeded(RuntimeError):
+    pass
+
+def _api_get(path: str, params: dict, counts_spend: bool = False):
     if not API_KEY or API_KEY == "pon_tu_api_key_aqui":
         raise RuntimeError("Falta ODDS_API_KEY en Render Environment")
-
-    cache_key = f"{sport_key}:{REGIONS}:{MARKETS}:{ODDS_FORMAT}"
-    if not force_refresh:
-        cached = _cache_get(cache_key)
-        if cached:
-            data, remaining = cached
-            return data, True, remaining
-
-    url = f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds/"
-    params = {
-        "apiKey": API_KEY,
-        "regions": REGIONS,
-        "markets": MARKETS,
-        "oddsFormat": ODDS_FORMAT,
-        "dateFormat": "iso",
-    }
-    logger.info("Fetching odds para %s", sport_key)
-    r = requests.get(url, params=params, timeout=30)
+    r = requests.get(f"{API_BASE}{path}", params={"apiKey": API_KEY, **params}, timeout=30)
+    _record_usage(r, counts_spend)
     if r.status_code != 200:
         try:
             detail = r.json()
         except Exception:
             detail = r.text
         raise RuntimeError(f"The Odds API error {r.status_code}: {detail}")
+    return r.json()
 
-    data = r.json()
-    _cache_set(cache_key, data)
-    return data, False, CACHE_TTL
+def _iso_z(dt: datetime) -> str:
+    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+def today_window() -> tuple[str, Optional[str]]:
+    """(desde, hasta) en UTC para commenceTimeFrom/To: desde ahora (los
+    partidos ya empezados se descartan igual, ver is_upcoming) hasta el fin
+    del día local. Sin tope si ONLY_TODAY=0."""
+    now = datetime.now(timezone.utc)
+    if not ONLY_TODAY:
+        return _iso_z(now), None
+    z = ZoneInfo(LOCAL_TZ)
+    local_now = now.astimezone(z)
+    end = datetime.combine(local_now.date() + timedelta(days=1), datetime.min.time(), tzinfo=z)
+    return _iso_z(now), _iso_z(end - timedelta(seconds=1))
+
+def fetch_active_sport_keys() -> Optional[set]:
+    """Sport keys en temporada según GET /sports (no cuesta créditos).
+    None si la llamada falla (en ese caso no se descarta ninguna liga)."""
+    cached = _cache_get("__sports__", SPORTS_LIST_TTL)
+    if cached:
+        return set(cached[0])
+    try:
+        data = _api_get("/sports", {})
+    except Exception as e:
+        logger.warning("No se pudo leer /sports: %s", e)
+        return None
+    keys = [s.get("key") for s in data if s.get("active")]
+    _cache_set("__sports__", keys)
+    return set(keys)
+
+def fetch_upcoming_events(sport_key: str) -> Optional[list]:
+    """Partidos de hoy que todavía no empezaron, según GET /events (no
+    cuesta créditos). None si la llamada falla."""
+    ck = f"__events__:{sport_key}"
+    cached = _cache_get(ck, EVENTS_TTL)
+    if cached:
+        events = cached[0]
+    else:
+        frm, to = today_window()
+        params = {"dateFormat": "iso", "commenceTimeFrom": frm}
+        if to:
+            params["commenceTimeTo"] = to
+        try:
+            events = _api_get(f"/sports/{sport_key}/events", params)
+        except Exception as e:
+            logger.warning("No se pudo leer /events de %s: %s", sport_key, e)
+            return None
+        _cache_set(ck, events)
+    return [e for e in events if is_game_today(e) and is_upcoming(e)]
+
+_fetch_lock = threading.Lock()
+
+def fetch_odds(sport_key: str, force_refresh: bool = False) -> tuple[list, bool, int, bool]:
+    """
+    Cuotas de una liga. Devuelve (juegos, from_cache, seg_cache_restantes, stale).
+    - Caché de REFRESH_INTERVAL_MIN por liga.
+    - force_refresh solo vuelve a pedir si las cuotas tienen más de
+      MIN_FORCE_REFRESH_MIN.
+    - Si el cupo diario está agotado (budget_allows) sirve la última copia
+      aunque esté vencida (stale=True); si no hay ninguna, BudgetExceeded.
+    - El lock evita que dos cargas simultáneas paguen la misma liga dos veces.
+    """
+    cache_key = f"{sport_key}:odds"
+    with _fetch_lock:
+        if force_refresh:
+            age = _cache_age(cache_key)
+            if age is not None and age < MIN_FORCE_REFRESH_MIN * 60:
+                force_refresh = False
+        if not force_refresh:
+            cached = _cache_get(cache_key)
+            if cached:
+                data, remaining = cached
+                return data, True, remaining, False
+
+        cost = odds_call_cost()
+        if not budget_allows(cost):
+            stale = _cache_get_stale(cache_key)
+            if stale is not None:
+                return stale, True, 0, True
+            raise BudgetExceeded("Modo ahorro: se alcanzó el cupo diario de créditos, esta liga no se consultó.")
+
+        frm, to = today_window()
+        params = {
+            "markets": MARKETS,
+            "oddsFormat": ODDS_FORMAT,
+            "dateFormat": "iso",
+            "commenceTimeFrom": frm,
+        }
+        if to:
+            params["commenceTimeTo"] = to
+        if BOOKMAKERS:
+            params["bookmakers"] = ",".join(BOOKMAKERS)
+        else:
+            params["regions"] = REGIONS
+        logger.info("Fetching odds para %s (costo estimado %d)", sport_key, cost)
+        data = _api_get(f"/sports/{sport_key}/odds/", params, counts_spend=True)
+        _cache_set(cache_key, data)
+        return data, False, CACHE_TTL, False
 
 # ---------------------------------------------------------------------------
 # Filtros
@@ -266,12 +598,14 @@ def get_market_outcomes(game: dict, mkey: str) -> list[dict]:
     rows = []
     for b in game.get("bookmakers", []):
         title = b.get("title", "Unknown")
+        book_key = b.get("key")
         for m in b.get("markets", []):
             if m.get("key") != mkey:
                 continue
             for o in m.get("outcomes", []):
                 rows.append({
                     "bookmaker": title,
+                    "book_key": book_key,
                     "market": mkey,
                     "name": o.get("name"),
                     "price": o.get("price"),
@@ -342,11 +676,9 @@ def no_vig_h2h_probabilities(outcomes: list) -> tuple[dict, dict]:
 # Prioridad de casas "sharp" (bajo vig, referencia de precio justo) para
 # anclar el fair price en vez de promediar entre todas las casas
 # consultadas. Pinnacle primero (estandar de la industria); LowVig.ag como
-# proxy si Pinnacle no esta disponible. Nota: con REGIONS=us (default),
-# Pinnacle no aparece en los datos de The Odds API (es de la region eu) —
-# en la practica el ancla es LowVig.ag cuando cotiza, o el fallback de
-# consenso si tampoco. Agregar la region eu a REGIONS activaria Pinnacle,
-# a costo de duplicar el consumo de creditos de API por consulta.
+# proxy si Pinnacle no esta disponible. Pinnacle (region eu) llega via el
+# parametro 'bookmakers' (ver BOOKMAKERS) sin pagar una segunda region; si
+# un mercado no lo cotiza, el ancla es LowVig.ag, y si tampoco, consenso.
 SHARP_BOOKS_PRIORITY = ["Pinnacle", "LowVig.ag"]
 
 def sharp_or_consensus_fair(outcomes: list) -> tuple[dict, dict, dict]:
@@ -404,10 +736,20 @@ def sharp_or_consensus_fair(outcomes: list) -> tuple[dict, dict, dict]:
 
     return fair, counts, source
 
+def is_bettable(o: dict) -> bool:
+    """Solo casas de BETTABLE_BOOKS pueden ser la casa recomendada. Pinnacle
+    y las demás casas sharp siguen entrando al precio justo y al conteo de
+    corroboración, pero nunca como lugar donde apostar."""
+    if not BETTABLE_BOOKS:
+        return True
+    return (o.get("book_key") or "").lower() in BETTABLE_BOOKS
+
 def best_price_filtered(outcomes: list, name: str, fair: float, point=None) -> Optional[dict]:
     cand = []
     for o in outcomes:
         if o.get("name") != name:
+            continue
+        if not is_bettable(o):
             continue
         if point is not None and o.get("point") != point:
             continue
@@ -869,6 +1211,53 @@ def best_market(ml: list, spread: list, total: list) -> Optional[dict]:
     }
 
 
+def top_plays(game_best: list, n: int = TOP_PLAYS_COUNT) -> list:
+    """
+    "Mejores Jugadas del Día": las n mejores de todas las ligas juntas, un
+    pick por partido (game_best ya viene de best_signal_for_game). Orden:
+    jerarquía de color (SÓLIDO > PROBABLE > EVITAR) y dentro de cada una
+    ranking_edge — el mismo criterio que elige el pick de cada partido.
+    Si no hay n picks verdes/azules se completa con los mejores EVITAR (con
+    su etiqueta visible), así la sección solo queda vacía si no hay juegos.
+    No reclasifica nada: color/label son los de classify_efficiency.
+    """
+    ranked = sorted(
+        game_best,
+        key=lambda s: (_COLOR_TIER_RANK.get(s.get("color"), 0), ranking_edge(s)),
+        reverse=True,
+    )
+    return [{**s, "top_rank": i + 1} for i, s in enumerate(ranked[:n])]
+
+def high_odds_picks(signals: list) -> list:
+    """
+    "Cuotas Altas": underdogs entre +HIGH_ODDS_MIN y +HIGH_ODDS_MAX con EV
+    positivo medido contra el precio justo de Pinnacle (fair_source ==
+    'sharp:Pinnacle', no consenso ni LowVig). La casa recomendada ya es
+    siempre una de BETTABLE_BOOKS (best_price_filtered). Agrega la ganancia
+    potencial y el EV en dólares por cada $10 apostados. Es una vista: no
+    toca color/tier ni entra a Tickets.
+    """
+    out = []
+    for s in signals:
+        odds, ev, dec = s.get("odds"), s.get("ev"), s.get("decimal_odds")
+        if odds is None or ev is None or dec is None:
+            continue
+        if not (HIGH_ODDS_MIN <= odds <= HIGH_ODDS_MAX) or ev <= 0:
+            continue
+        if s.get("fair_source") != "sharp:Pinnacle":
+            continue
+        fair_prob = s.get("probability")
+        implied = implied_probability_american(odds)
+        out.append({
+            **s,
+            "profit_per_10":   round(10 * (dec - 1), 2),
+            "ev_per_10":       round(ev / 10, 2),
+            "pinnacle_prob":   fair_prob,
+            "implied_prob":    round(implied * 100, 1) if implied is not None else None,
+        })
+    out.sort(key=lambda x: x.get("ev") or 0, reverse=True)
+    return out[:HIGH_ODDS_LIMIT]
+
 def game_prediction_full(game: dict, sport: str) -> dict:
     name   = f"{game.get('away_team')} vs {game.get('home_team')}"
     ml     = moneyline_efficiency(game, sport)
@@ -1114,8 +1503,18 @@ def build_mltotal_ticket(name: str, pool: list, games_target: int, color: str, r
 # ---------------------------------------------------------------------------
 def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
     dash: dict = {
-        "mode":             "Pro v8.5 - Full Market Analysis",
+        "mode":             "Pro v8.7 - Multi-liga",
         "cache_ttl_seconds": CACHE_TTL,
+        "refresh_interval_min": REFRESH_INTERVAL_MIN,
+
+        # Mejores Jugadas del Día (top N de todas las ligas) y Cuotas Altas
+        # (underdogs +EV contra Pinnacle) — ver top_plays / high_odds_picks.
+        "top_plays":  [],
+        "high_odds":  [],
+        "high_odds_range": [HIGH_ODDS_MIN, HIGH_ODDS_MAX],
+
+        # Contador de créditos de The Odds API (headers x-requests-*).
+        "api_usage": {},
         "only_today":       ONLY_TODAY,
         "timezone":         LOCAL_TZ,
         "sports":           {},
@@ -1145,18 +1544,40 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
         "warnings": [],
     }
 
+    # Ligas en temporada (/sports, gratis). None = no se pudo leer: no se
+    # descarta ninguna y se sigue con /events.
+    active_keys = fetch_active_sport_keys() if API_KEY else None
+
     for label, key in SPORTS_EFFICIENCY.items():
         if label not in selected_sports and "ALL" not in selected_sports:
             continue
+        if active_keys is not None and key not in active_keys:
+            dash["sports"][label] = {
+                "ok": True, "sport_key": key, "skipped": "Fuera de temporada",
+                "games_count": 0, "total_api_games": 0,
+            }
+            continue
         try:
-            games, from_cache, ttl = fetch_odds(key, force_refresh=force_refresh)
+            # /events (gratis): si la liga no tiene partidos por empezar hoy
+            # no se piden cuotas. Si /events falla (None) se piden igual.
+            upcoming = fetch_upcoming_events(key) if API_KEY else None
+            if upcoming is not None and not upcoming:
+                dash["sports"][label] = {
+                    "ok": True, "sport_key": key, "skipped": "Sin juegos por empezar hoy",
+                    "games_count": 0, "total_api_games": 0,
+                }
+                continue
+            games, from_cache, ttl, stale = fetch_odds(key, force_refresh=force_refresh)
             total = len(games)
             games = [g for g in games if is_game_today(g) and is_upcoming(g)]
             dash["sports"][label] = {
                 "ok": True, "sport_key": key,
                 "games_count": len(games), "total_api_games": total,
                 "from_cache": from_cache, "cache_seconds_left": ttl,
+                "stale": stale,
             }
+            if stale:
+                dash["warnings"].append(f"{label}: modo ahorro de créditos — se muestran las últimas cuotas guardadas.")
             for g in games:
                 dash["all_games"].append(game_prediction_full(g, label))
                 dash["schedule"].append({
@@ -1210,12 +1631,15 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
     dash["efficiency_blue"]   = sorted([s for s in game_best if s.get("color") == "blue"],   key=sorter_ev, reverse=True)
     dash["avoid"]             = sorted([s for s in game_best if s.get("color") == "red"],    key=sorter_rank, reverse=True)
 
+    dash["top_plays"] = top_plays(game_best)
+    dash["high_odds"] = high_odds_picks(all_signals)
+
     # Ticket Eficiencia: producto curado (requiere green/blue), queda
     # deshabilitado en la UI (display:none) pero se mantiene funcional.
     eff_pool = dedupe(dash["efficiency_green"] + dash["efficiency_blue"])
     dash["ticket_efficiency"] = build_ticket(
         "🔒 Ticket Eficiencia", eff_pool, 6, ticket_ok_efficiency,
-        "green", "Bajo", "Picks de alta probabilidad en MLB/NBA/NHL."
+        "green", "Bajo", "Picks de alta probabilidad en todas las ligas."
     )
 
     # Parlay Mixto (3/6/10 legs) — ML + Spread + Total, top Score Kelly del
@@ -1242,29 +1666,38 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
     dash["ticket_mltotal_6"]  = build_mltotal_ticket("🔥 Parlay ML+Total — 6 Juegos",  _parlay_pool_mltotal, 6,  "yellow", "Medio", "6 mejores juegos del día por Score Kelly combinado (ML+Total).")
     dash["ticket_mltotal_10"] = build_mltotal_ticket("⭐ Parlay ML+Total — 10 Juegos", _parlay_pool_mltotal, 10, "yellow", "Alto",  "10 mejores juegos del día por Score Kelly combinado (ML+Total).")
 
+    usage = usage_status()
+    dash["api_usage"] = usage
+    if usage.get("low"):
+        dash["warnings"].append(
+            f"Quedan {usage['remaining']:,} créditos de The Odds API ({usage['pct_remaining']}%) — menos del {int(LOW_CREDITS_PCT)}% del plan."
+        )
     return dash
 
 # ---------------------------------------------------------------------------
 # Debug
 # ---------------------------------------------------------------------------
 def debug_all_sports() -> dict:
+    """Estado de ligas usando solo /sports y /events (no gastan créditos):
+    antes llamaba fetch_odds por liga, que con 13 ligas y la caché fría
+    podía costar ~39 créditos por cada vista de Debug."""
     res = {
         "api_key": api_key_status(),
         "regions": REGIONS, "markets": MARKETS,
+        "bookmakers": BOOKMAKERS, "bettable_books": sorted(BETTABLE_BOOKS),
         "cache_ttl_seconds": CACHE_TTL,
         "only_today": ONLY_TODAY, "timezone": LOCAL_TZ,
+        "api_usage": usage_status(),
         "sports": {},
     }
+    active_keys = fetch_active_sport_keys() if API_KEY else None
     for label, key in SPORTS.items():
-        try:
-            games, fc, ttl = fetch_odds(key)
-            total = len(games)
-            games = [g for g in games if is_game_today(g) and is_upcoming(g)]
-            res["sports"][label] = {
-                "ok": True, "sport_key": key,
-                "games_count": len(games), "total_api_games": total,
-                "from_cache": fc, "cache_seconds_left": ttl,
-            }
-        except Exception as e:
-            res["sports"][label] = {"ok": False, "sport_key": key, "error": str(e)}
+        if active_keys is not None and key not in active_keys:
+            res["sports"][label] = {"ok": True, "sport_key": key, "skipped": "Fuera de temporada"}
+            continue
+        upcoming = fetch_upcoming_events(key) if API_KEY else None
+        if upcoming is None:
+            res["sports"][label] = {"ok": False, "sport_key": key, "error": "No se pudo leer /events"}
+        else:
+            res["sports"][label] = {"ok": True, "sport_key": key, "upcoming_today": len(upcoming)}
     return res
