@@ -50,7 +50,21 @@ BOOKMAKERS=pinnacle,fanduel,draftkings,betmgm,williamhill_us,fanatics,betrivers,
 BETTABLE_BOOKS=fanduel,draftkings,betmgm,williamhill_us,caesars,fanatics,betrivers,bet365
 HIGH_ODDS_MIN=150
 HIGH_ODDS_MAX=500
+HIGH_ODDS_MIN_EDGE=1.0         # edge mínimo (puntos de probabilidad) para Cuotas Altas
+TOP_PLAYS_MAX_ODDS=500         # Mejores Jugadas nunca muestra cuotas mayores
 ```
+
+## v8.7.1
+- PROBABLE respeta el piso de probabilidad (55%). Un EV positivo por debajo
+  del piso es "💰 CUOTA ALTA" y solo aparece en Cuotas Altas (no en
+  SÓLIDO/PROBABLE/EVITAR ni en Mejores Jugadas).
+- Cuota ≥ +150 sin Pinnacle como ancla: aviso "⚠ Sin ancla sharp" y fuera de
+  Mejores Jugadas y Cuotas Altas. Cuotas Altas exige edge ≥ 1.0 pt.
+- Mejores Jugadas: nunca cuotas mayores a +500.
+- Guardián de créditos por ritmo sobre `x-requests-used` (lo que reporta la
+  API), sin estado propio: sobrevive reinicios de Render. Permitido a hoy =
+  presupuesto × día del ciclo / días del ciclo. Una liga frenada por cupo
+  se muestra como "⏸ Cupo", no como error.
 
 ## v8.7 — multi-liga, Pinnacle y presupuesto de créditos
 - Ligas: NFL, NCAAF, NCAAB, NBA, NHL, MLB, EPL, La Liga, Champions, Liga MX,

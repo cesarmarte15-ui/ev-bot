@@ -269,7 +269,7 @@
       <span class="section-title">⭐ Mejores Jugadas del Día — todas las ligas</span>
       <span class="section-count" id="top-count">0</span>
     </div>
-    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Las 5 mejores del día, un pick por partido, con su etiqueta de calidad. Primero SÓLIDO, después PROBABLE; si no alcanzan, se completa con EVITAR (marcadas como no jugables) para que veas qué hay en el mercado.</p>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Las 5 mejores del día, un pick por partido, con su etiqueta de calidad. Primero SÓLIDO, después PROBABLE; si no alcanzan, se completa con EVITAR (marcadas como no jugables). Nunca cuotas mayores a +500: los underdogs con valor están en Cuotas Altas.</p>
     <div class="cards-grid" id="top-grid"></div>
   </div>
 
@@ -485,9 +485,13 @@ function creditsBadge(u) {
   const cls  = u.saving_mode ? 'saving' : (u.low ? 'low' : '');
   const warn = u.saving_mode ? ' · ⛔ modo ahorro'
              : u.low ? ` · ⚠ menos del ${u.low_threshold_pct}%` : '';
-  const tip  = `Hoy: ${fmt(u.spent_today)} de ${fmt(u.daily_allowance)} créditos permitidos · `
+  const p    = u.pace || {};
+  const tip  = (p.allowed_used != null
+                 ? `Usados ${fmt(u.used)} de ${fmt(p.allowed_used)} permitidos a hoy (día ${p.cycle_day}/${p.cycle_len} del ciclo, presupuesto ${fmt(p.budget)}) · `
+                 : '')
              + `${u.cost_per_league} créditos por liga · actualiza cada ${u.refresh_interval_min} min`
-             + (u.billing_reset_day ? ` · reinicio día ${u.billing_reset_day}` : ' · día de reinicio no configurado (se asume el 1)');
+             + (u.billing_reset_day ? ` · reinicio día ${u.billing_reset_day}` : ' · día de reinicio no configurado (se asume el 1)')
+             + (u.saving_reason ? ` · ${u.saving_reason}` : '');
   return `<span class="credits ${cls}" title="${escAttr(tip)}">💳 ${fmt(u.remaining)} / ${fmt(u.total)} créditos (${u.pct_remaining}%)${warn}</span>`;
 }
 
@@ -535,7 +539,7 @@ function renderHighOdds(data) {
   const ct = document.getElementById('high-count');
   const desc = document.getElementById('high-desc');
   if (ct) ct.textContent = picks.length;
-  if (desc) desc.textContent = `Underdogs entre +${lo} y +${hi} con EV positivo contra el precio justo de Pinnacle. Pegan menos seguido: son para stakes chicos.`;
+  if (desc) desc.textContent = `Underdogs entre +${lo} y +${hi} con EV positivo contra el precio justo de Pinnacle y edge de al menos ${data.high_odds_min_edge ?? 1} pt. Pegan menos seguido: son para stakes chicos.`;
   el.innerHTML = picks.length
     ? picks.map(renderHighOddsCard).join('')
     : `<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-msg">Sin underdogs con EV positivo contra Pinnacle ahora mismo.</div></div>`;
@@ -675,6 +679,7 @@ function renderCard(sig) {
       </div>
       <div class="card-game">${sig.game||''}</div>
       <div class="card-selection">${sig.selection||''}</div>
+      ${noSharpBadge(sig)}
       ${color==='red' && sig.reason ? `<div class="card-reason">${sig.reason}</div>` : ''}
       <div class="fd-pick">
         <div>
@@ -725,6 +730,7 @@ function renderEdgeCard(sig) {
       </div>
       <div class="card-game">${sig.game||''}</div>
       <div class="card-selection">${sig.selection||''}</div>
+      ${noSharpBadge(sig)}
       <div class="fd-pick">
         <div>
           <div class="fd-pick-label">📋 FanDuel Pick</div>
@@ -744,6 +750,14 @@ function renderEdgeCard(sig) {
         <span class="book-line">🏦 Mejor precio: ${sig.bookmaker||'--'} ${oddsStr}</span>
       </div>
     </div>`;
+}
+
+// Cuota alta (>= +150) sin Pinnacle como ancla del precio justo: el EV
+// sale del consenso/LowVig y en underdogs puede estar inflado.
+function noSharpBadge(sig) {
+  return sig.no_sharp_anchor
+    ? `<div class="card-reason" style="color:var(--gold);background:var(--gold-dim)">⚠ Sin ancla sharp — cuota alta sin Pinnacle, el EV puede estar inflado.</div>`
+    : '';
 }
 
 // ── GRID ──────────────────────────────────────────────────
@@ -900,7 +914,7 @@ function renderDebug(data) {
       <td>${s.sport_key||''}</td>
       <td>${s.games_count??'--'}</td>
       <td>${s.total_api_games??'--'}</td>
-      <td>${s.skipped ? '⏭ No consultada (0 créditos)' : s.stale ? '💤 Cache vieja (modo ahorro)' : s.from_cache ? '♻ Cache' : '🌐 API'}</td>
+      <td>${s.budget_blocked ? '⏸ Cupo de créditos' : s.skipped ? '⏭ No consultada (0 créditos)' : s.stale ? '💤 Cache vieja (modo ahorro)' : s.from_cache ? '♻ Cache' : '🌐 API'}</td>
       <td style="font-size:11px;color:${s.ok?'var(--muted)':'var(--red)'}">${s.ok ? (s.skipped||'') : (s.error||'Error')}</td>
     </tr>`).join('');
   document.getElementById('debug-container').innerHTML = `

@@ -115,7 +115,9 @@ USAGE_FILE: str = os.getenv("USAGE_FILE", os.path.join(os.path.dirname(os.path.a
 HIGH_ODDS_MIN: int   = int(os.getenv("HIGH_ODDS_MIN", "150"))
 HIGH_ODDS_MAX: int   = int(os.getenv("HIGH_ODDS_MAX", "500"))
 HIGH_ODDS_LIMIT: int = int(os.getenv("HIGH_ODDS_LIMIT", "15"))
+HIGH_ODDS_MIN_EDGE: float = float(os.getenv("HIGH_ODDS_MIN_EDGE", "1.0"))   # puntos de probabilidad
 TOP_PLAYS_COUNT: int = int(os.getenv("TOP_PLAYS_COUNT", "5"))
+TOP_PLAYS_MAX_ODDS: int = int(os.getenv("TOP_PLAYS_MAX_ODDS", "500"))
 
 # Umbrales
 EFFICIENCY_MIN_PROB     = 60.0   # % mínimo para pick eficiente
@@ -286,8 +288,8 @@ def api_key_status() -> str:
 # Cada respuesta de la API (incluso /sports y /events, que no cuestan) trae
 # x-requests-remaining / x-requests-used / x-requests-last. Se guardan en
 # memoria y en USAGE_FILE para que un reinicio no deje el contador en blanco.
-# 'spent_today' suma x-requests-last de las llamadas a /odds del día local:
-# es lo que compara el guardián de presupuesto (budget_allows).
+# 'spent_today' suma x-requests-last de las llamadas a /odds del día local
+# (solo informativo; el guardián usa x-requests-used, ver budget_pace).
 _usage_lock = threading.Lock()
 _usage: dict = {
     "remaining": None, "used": None, "last": None, "updated_at": None,
@@ -361,54 +363,89 @@ def odds_call_cost() -> int:
         groups = len([x for x in REGIONS.split(",") if x.strip()])
     return max(1, n_markets) * max(1, groups)
 
-def _days_until_reset(today: date) -> int:
+def _billing_cycle(today: date) -> tuple[date, date]:
+    """(inicio, fin) del ciclo de facturación que contiene 'today': del
+    último día de reinicio (BILLING_RESET_DAY, o el 1 si no está
+    configurado) al siguiente. Días 29-31 se ajustan al fin de mes."""
     import calendar
     day = BILLING_RESET_DAY or 1
     def on(y: int, m: int) -> date:
         return date(y, m, min(day, calendar.monthrange(y, m)[1]))
+    def shift(y: int, m: int, k: int) -> tuple[int, int]:
+        m0 = (y * 12 + (m - 1)) + k
+        return m0 // 12, m0 % 12 + 1
     this_month = on(today.year, today.month)
-    if this_month > today:
-        nxt = this_month
+    if this_month <= today:
+        start, end = this_month, on(*shift(today.year, today.month, 1))
     else:
-        y, m = (today.year + 1, 1) if today.month == 12 else (today.year, today.month + 1)
-        nxt = on(y, m)
-    return max(1, (nxt - today).days)
+        start, end = on(*shift(today.year, today.month, -1)), this_month
+    return start, end
 
-def daily_allowance() -> int:
-    """Créditos que se pueden gastar hoy en /odds. Reparte lo que queda del
-    plan (menos una reserva) entre los días que faltan para el reinicio. La
-    reserva es la proporción (1 - MONTHLY_CREDIT_BUDGET/PLAN_CREDITS) del
-    plan real según los headers: con 18,000/20,000 se guarda el 10%. Se
-    calcula con lo que quedaba al EMPEZAR el día (remaining + spent_today)
-    para que el cupo no se achique a medida que se gasta."""
+def budget_pace() -> dict:
+    """
+    Guardián de presupuesto por RITMO, basado en x-requests-used (gasto
+    acumulado del ciclo que reporta la propia API). v8.7 contaba el gasto
+    del día en memoria/archivo; en Render el servicio se reinicia (duerme,
+    redeploys) y el disco es efímero, así que ese conteo volvía a 0 y el
+    guardián quedaba más flojo de lo previsto. Ahora no hay estado propio:
+
+      presupuesto  = (remaining + used) * MONTHLY_CREDIT_BUDGET/PLAN_CREDITS
+      permitido    = presupuesto * dias_transcurridos / dias_del_ciclo
+      modo ahorro  si used + costo > permitido
+
+    (dias_transcurridos incluye hoy). Ej. 450 de presupuesto en un ciclo de
+    30 días: día 1 permite 15, día 10 permite 150, último día permite 450.
+    Lo no gastado un día queda disponible los siguientes.
+    """
     with _usage_lock:
-        _roll_day_locked()
         remaining = _usage.get("remaining")
-        used      = _usage.get("used") or 0
-        spent     = _usage.get("spent_today") or 0
-    if remaining is None:
-        return MONTHLY_CREDIT_BUDGET // 30
+        used      = _usage.get("used")
+    today = _local_today()
+    start, end = _billing_cycle(today)
+    cycle_len = max(1, (end - start).days)
+    day_idx = min(cycle_len, (today - start).days + 1)
+    out = {
+        "cycle_start": start.isoformat(), "cycle_end": end.isoformat(),
+        "cycle_day": day_idx, "cycle_len": cycle_len,
+        "budget": None, "allowed_used": None, "headroom": None,
+    }
+    if remaining is None or used is None:
+        return out
     total = remaining + used
-    ratio = clamp(MONTHLY_CREDIT_BUDGET / PLAN_CREDITS, 0.1, 1.0) if PLAN_CREDITS > 0 else 0.9
-    reserve = total * (1.0 - ratio)
-    usable = max(0.0, remaining + spent - reserve)
-    if BILLING_RESET_DAY is None:
-        # Sin día de reinicio configurado no se sabe cuántos días faltan:
-        # cupo fijo de 1/30 de la meta mensual (600/día con 18,000), nunca
-        # más de lo que realmente queda repartido en 30 días.
-        return int(min(MONTHLY_CREDIT_BUDGET / 30, usable / 30))
-    return int(usable / _days_until_reset(_local_today()))
+    ratio = clamp(MONTHLY_CREDIT_BUDGET / PLAN_CREDITS, 0.01, 1.0) if PLAN_CREDITS > 0 else 0.9
+    budget = total * ratio
+    allowed = budget * day_idx / cycle_len
+    out.update({
+        "budget": int(budget),
+        "allowed_used": int(allowed),
+        "headroom": int(allowed - used),
+    })
+    return out
 
 def budget_allows(cost: int) -> bool:
     if not BUDGET_GUARD:
         return True
     with _usage_lock:
-        _roll_day_locked()
         remaining = _usage.get("remaining")
-        spent     = _usage.get("spent_today") or 0
-    if remaining is not None and remaining < cost:
+        used      = _usage.get("used")
+    if remaining is None or used is None:
+        # Sin headers todavía (recién reiniciado): /sports, que no cuesta y
+        # se pide antes que cualquier /odds, los trae en la misma carga.
+        return True
+    if remaining < cost:
         return False
-    return spent + cost <= daily_allowance()
+    pace = budget_pace()
+    return used + cost <= pace["allowed_used"]
+
+def budget_reason() -> str:
+    p = budget_pace()
+    with _usage_lock:
+        used = _usage.get("used")
+    reset = f"día {BILLING_RESET_DAY}" if BILLING_RESET_DAY else "día 1 (BILLING_RESET_DAY no configurado)"
+    if p["allowed_used"] is None:
+        return ""
+    return (f"Ritmo de gasto: {used} créditos usados de {p['allowed_used']} permitidos a hoy "
+            f"(día {p['cycle_day']} de {p['cycle_len']} del ciclo, presupuesto {p['budget']}, reinicio {reset}).")
 
 def usage_status() -> dict:
     with _usage_lock:
@@ -417,9 +454,10 @@ def usage_status() -> dict:
     remaining, used = u.get("remaining"), u.get("used")
     total = (remaining + (used or 0)) if remaining is not None else None
     pct = round(remaining / total * 100, 1) if total else None
-    allowance = daily_allowance()
     cost = odds_call_cost()
-    spent = u.get("spent_today") or 0
+    pace = budget_pace()
+    saving = bool(BUDGET_GUARD and pace["allowed_used"] is not None
+                  and (used or 0) + cost > pace["allowed_used"])
     return {
         "remaining":            remaining,
         "used":                 used,
@@ -429,13 +467,17 @@ def usage_status() -> dict:
         "low_threshold_pct":    LOW_CREDITS_PCT,
         "last_cost":            u.get("last"),
         "updated_at":           u.get("updated_at"),
-        "spent_today":          spent,
-        "daily_allowance":      allowance,
-        "saving_mode":          BUDGET_GUARD and spent + cost > allowance,
+        # Informativo (se pierde si el servicio se reinicia); el guardián
+        # usa x-requests-used, ver budget_pace().
+        "spent_today":          u.get("spent_today") or 0,
+        "pace":                 pace,
+        "saving_mode":          saving,
+        "saving_reason":        budget_reason() if saving else "",
         "cost_per_league":      cost,
         "refresh_interval_min": REFRESH_INTERVAL_MIN,
         "billing_reset_day":    BILLING_RESET_DAY,
         "monthly_budget":       MONTHLY_CREDIT_BUDGET,
+        "plan_credits":         PLAN_CREDITS,
         "budget_guard":         BUDGET_GUARD,
     }
 
@@ -985,9 +1027,20 @@ def classify_efficiency(prob, val, ev, edge, odds, books=None, pick_id: Optional
     # positivo marcado EVITAR). odds_ok/books_ok se mantienen: no son el
     # sesgo de Validación que se esta corrigiendo, son filtros de calidad de
     # dato (precio demasiado corto / poca corroboracion entre casas).
+    #
+    # v8.7.1: PROBABLE respeta el piso de probabilidad (PROBABLE_FALLBACK_
+    # MIN_PROB). Antes esta salvaguarda devolvia PROBABLE sin mirar la
+    # probabilidad, y en produccion llenaba PROBABLE de underdogs de +700 a
+    # +2500 con 4-13% de probabilidad (18 de 19 PROBABLE el 24-nov). Un EV
+    # positivo por debajo del piso es un underdog de cuota alta: etiqueta
+    # propia (gold, "CUOTA ALTA"), que solo se muestra en Cuotas Altas
+    # (ver high_odds_picks) y no entra a SOLIDO/PROBABLE/Mejores Jugadas.
     if ev > 0 and odds_ok and books_ok:
-        _remember_tier(pick_id, "blue")
-        return "blue", "📌 PROBABLE", f"EV real positivo ({ev:.1f}%) pero no cumple el resto de las compuertas de calidad.", "0.1u"
+        if prob >= PROBABLE_FALLBACK_MIN_PROB:
+            _remember_tier(pick_id, "blue")
+            return "blue", "📌 PROBABLE", f"EV real positivo ({ev:.1f}%) pero no cumple el resto de las compuertas de calidad.", "0.1u"
+        _remember_tier(pick_id, "gold")
+        return "gold", "💰 CUOTA ALTA", f"Underdog con EV positivo ({ev:.1f}%) y probabilidad {prob:.1f}% bajo el piso de PROBABLE — solo para Cuotas Altas.", "0.1u"
 
     reason = efficiency_failure_reason(prob, val, ev, odds, odds_ok, books, books_ok)
     _remember_tier(pick_id, "red")
@@ -1004,6 +1057,12 @@ def enrich(sig: dict) -> dict:
     sig["is_bet_recommendation"] = sig.get("color") in ("green", "blue", "yellow")
     sig["kelly_score"] = kelly_score(sig)
     sig["kelly_tier"], sig["kelly_stake"] = kelly_tier(sig["kelly_score"])
+    # Cuota alta sin Pinnacle como ancla: el edge sale del consenso o de
+    # LowVig y en underdogs grandes ese de-vig tiene ~1 pt de error, del
+    # mismo tamaño que el edge medido (EV = edge x cuota lo infla). Se marca
+    # en la UI y queda fuera de Mejores Jugadas y Cuotas Altas.
+    sig["pinnacle_anchor"] = sig.get("fair_source") == "sharp:Pinnacle"
+    sig["no_sharp_anchor"] = (sig.get("odds") or 0) >= HIGH_ODDS_MIN and not sig["pinnacle_anchor"]
     return sig
 
 # ---------------------------------------------------------------------------
@@ -1167,6 +1226,11 @@ def total_signals(game: dict, sport: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 _COLOR_TIER_RANK = {"green": 3, "blue": 2, "yellow": 1, "red": 0}
 
+# Señales "gold" (CUOTA ALTA, ver classify_efficiency) no compiten por ser
+# EL pick de un partido en SOLIDO/PROBABLE/EVITAR ni en Mejores Jugadas:
+# viven solo en Cuotas Altas.
+_REPRESENTATIVE_EXCLUDED = {"gold"}
+
 def best_signal_for_game(signals: list) -> Optional[dict]:
     """
     Un solo pick representativo por partido entre todos sus mercados (ML/
@@ -1180,7 +1244,8 @@ def best_signal_for_game(signals: list) -> Optional[dict]:
     los buckets de get_dashboard() (SÓLIDO/PROBABLE/EVITAR) nunca puedan
     volver a divergir entre sí.
     """
-    cands = [s for s in (signals or []) if s.get("ev") is not None]
+    cands = [s for s in (signals or [])
+             if s.get("ev") is not None and s.get("color") not in _REPRESENTATIVE_EXCLUDED]
     if not cands:
         return None
     best_tier = max(_COLOR_TIER_RANK.get(s.get("color"), 0) for s in cands)
@@ -1221,8 +1286,14 @@ def top_plays(game_best: list, n: int = TOP_PLAYS_COUNT) -> list:
     su etiqueta visible), así la sección solo queda vacía si no hay juegos.
     No reclasifica nada: color/label son los de classify_efficiency.
     """
+    # Nunca cuotas mayores a TOP_PLAYS_MAX_ODDS (+500) ni cuotas altas sin
+    # Pinnacle como ancla (no_sharp_anchor): son las que inflan el EV.
+    eligible = [
+        s for s in game_best
+        if (s.get("odds") or 0) <= TOP_PLAYS_MAX_ODDS and not s.get("no_sharp_anchor")
+    ]
     ranked = sorted(
-        game_best,
+        eligible,
         key=lambda s: (_COLOR_TIER_RANK.get(s.get("color"), 0), ranking_edge(s)),
         reverse=True,
     )
@@ -1245,6 +1316,12 @@ def high_odds_picks(signals: list) -> list:
         if not (HIGH_ODDS_MIN <= odds <= HIGH_ODDS_MAX) or ev <= 0:
             continue
         if s.get("fair_source") != "sharp:Pinnacle":
+            continue
+        # Edge minimo en puntos de probabilidad: edges de 0.1-0.5 pts estan
+        # dentro del error del de-vig en underdogs y no son señal.
+        if (s.get("edge") or 0) < HIGH_ODDS_MIN_EDGE:
+            continue
+        if (s.get("book_count") or 0) < EFFICIENCY_MIN_BOOKS:
             continue
         fair_prob = s.get("probability")
         implied = implied_probability_american(odds)
@@ -1512,6 +1589,7 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
         "top_plays":  [],
         "high_odds":  [],
         "high_odds_range": [HIGH_ODDS_MIN, HIGH_ODDS_MAX],
+        "high_odds_min_edge": HIGH_ODDS_MIN_EDGE,
 
         # Contador de créditos de The Odds API (headers x-requests-*).
         "api_usage": {},
@@ -1547,6 +1625,7 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
     # Ligas en temporada (/sports, gratis). None = no se pudo leer: no se
     # descarta ninguna y se sigue con /events.
     active_keys = fetch_active_sport_keys() if API_KEY else None
+    budget_blocked: list[str] = []
 
     for label, key in SPORTS_EFFICIENCY.items():
         if label not in selected_sports and "ALL" not in selected_sports:
@@ -1577,7 +1656,7 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
                 "stale": stale,
             }
             if stale:
-                dash["warnings"].append(f"{label}: modo ahorro de créditos — se muestran las últimas cuotas guardadas.")
+                budget_blocked.append(f"{label} (cuotas guardadas)")
             for g in games:
                 dash["all_games"].append(game_prediction_full(g, label))
                 dash["schedule"].append({
@@ -1587,10 +1666,25 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
                     "away_team":  g.get("away_team"),
                     "start_time": g.get("commence_time"),
                 })
+        except BudgetExceeded:
+            # No es un error de la API: el guardián de presupuesto no dejó
+            # consultarla (y no había cuotas guardadas para mostrar).
+            logger.info("Liga %s no consultada por cupo de créditos", label)
+            dash["sports"][label] = {
+                "ok": True, "sport_key": key, "budget_blocked": True,
+                "skipped": "⏸ Cupo de créditos — no consultada",
+                "games_count": 0, "total_api_games": 0,
+            }
+            budget_blocked.append(f"{label} (sin consultar)")
         except Exception as e:
             logger.error("Error %s: %s", label, e, exc_info=True)
             dash["sports"][label] = {"ok": False, "sport_key": key, "error": str(e)}
             dash["warnings"].append(f"{label}: {e}")
+
+    if budget_blocked:
+        dash["warnings"].append(
+            "⏸ Modo ahorro de créditos: " + ", ".join(budget_blocked) + ". " + budget_reason()
+        )
 
     sorter_ev   = lambda x: x.get("ev") if x.get("ev") is not None else -999
     # Para listas/pools SIN piso de probabilidad (avoid, parlays sin color):
