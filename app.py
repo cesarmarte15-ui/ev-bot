@@ -22,7 +22,8 @@ def index():
 @app.route("/api/dashboard")
 def api_dashboard():
     try:
-        selected = request.args.getlist("sports") or ["ALL"]
+        # Selector de liga: solo etiquetas conocidas; cualquier otra cosa = ALL.
+        selected = [s for s in request.args.getlist("sports") if s == "ALL" or s in SPORTS] or ["ALL"]
         force    = request.args.get("refresh", "0") == "1"
         logger.info("Dashboard v8.7: sports=%s force=%s", selected, force)
         data = get_dashboard(selected, force_refresh=force)
