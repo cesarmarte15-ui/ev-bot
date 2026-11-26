@@ -109,6 +109,8 @@ PLAN_CREDITS: int = int(os.getenv("PLAN_CREDITS", "20000"))
 BILLING_RESET_DAY: Optional[int] = int(os.getenv("BILLING_RESET_DAY")) if os.getenv("BILLING_RESET_DAY", "").strip() else None
 BUDGET_GUARD: bool = os.getenv("BUDGET_GUARD", "1") == "1"
 LOW_CREDITS_PCT: float = 20.0
+# Modo ahorro: solo se activa cuando x-requests-remaining baja de este número.
+MIN_REMAINING_CREDITS: int = 50
 USAGE_FILE: str = os.getenv("USAGE_FILE", os.path.join(os.path.dirname(os.path.abspath(__file__)), ".api_usage.json"))
 
 # Cuotas Altas: underdogs con EV positivo contra Pinnacle.
@@ -425,27 +427,24 @@ def budget_pace() -> dict:
 def budget_allows(cost: int) -> bool:
     if not BUDGET_GUARD:
         return True
+    # Modo ahorro solo por créditos restantes en la cuenta (x-requests-remaining);
+    # el ritmo de gasto (budget_pace) ya no bloquea, queda solo informativo.
     with _usage_lock:
         remaining = _usage.get("remaining")
-        used      = _usage.get("used")
-    if remaining is None or used is None:
+    if remaining is None:
         # Sin headers todavía (recién reiniciado): /sports, que no cuesta y
         # se pide antes que cualquier /odds, los trae en la misma carga.
         return True
-    if remaining < cost:
-        return False
-    pace = budget_pace()
-    return used + cost <= pace["allowed_used"]
+    return remaining >= MIN_REMAINING_CREDITS
 
 def budget_reason() -> str:
-    p = budget_pace()
     with _usage_lock:
-        used = _usage.get("used")
-    reset = f"día {BILLING_RESET_DAY}" if BILLING_RESET_DAY else "día 1 (BILLING_RESET_DAY no configurado)"
-    if p["allowed_used"] is None:
+        remaining = _usage.get("remaining")
+    if remaining is None:
         return ""
-    return (f"Ritmo de gasto: {used} créditos usados de {p['allowed_used']} permitidos a hoy "
-            f"(día {p['cycle_day']} de {p['cycle_len']} del ciclo, presupuesto {p['budget']}, reinicio {reset}).")
+    reset = f"día {BILLING_RESET_DAY}" if BILLING_RESET_DAY else "día 1 (BILLING_RESET_DAY no configurado)"
+    return (f"Quedan {remaining} créditos en la cuenta (menos de {MIN_REMAINING_CREDITS}); "
+            f"se reanuda al reiniciar el ciclo ({reset}).")
 
 def usage_status() -> dict:
     with _usage_lock:
@@ -456,8 +455,8 @@ def usage_status() -> dict:
     pct = round(remaining / total * 100, 1) if total else None
     cost = odds_call_cost()
     pace = budget_pace()
-    saving = bool(BUDGET_GUARD and pace["allowed_used"] is not None
-                  and (used or 0) + cost > pace["allowed_used"])
+    saving = bool(BUDGET_GUARD and remaining is not None
+                  and remaining < MIN_REMAINING_CREDITS)
     return {
         "remaining":            remaining,
         "used":                 used,
@@ -579,7 +578,7 @@ def fetch_odds(sport_key: str, force_refresh: bool = False) -> tuple[list, bool,
             stale = _cache_get_stale(cache_key)
             if stale is not None:
                 return stale, True, 0, True
-            raise BudgetExceeded("Modo ahorro: se alcanzó el cupo diario de créditos, esta liga no se consultó.")
+            raise BudgetExceeded(f"Modo ahorro: quedan menos de {MIN_REMAINING_CREDITS} créditos en la cuenta, esta liga no se consultó.")
 
         frm, to = today_window()
         params = {
