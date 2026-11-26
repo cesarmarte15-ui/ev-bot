@@ -19,6 +19,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+import history  # noqa: E402  (después de load_dotenv: lee DATABASE_URL, CLV_ENABLED...)
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -599,6 +601,29 @@ def fetch_odds(sport_key: str, force_refresh: bool = False) -> tuple[list, bool,
         return data, False, CACHE_TTL, False
 
 # ---------------------------------------------------------------------------
+# Historial: marcadores (/scores) y cuotas de cierre (CLV)
+# ---------------------------------------------------------------------------
+def fetch_scores(sport_key: str) -> list:
+    """GET /scores con daysFrom=3: partidos terminados de los últimos 3 días.
+    Cuesta 2 créditos. Solo lo llama history.maybe_grade (una vez por liga
+    cada SCORES_INTERVAL_H, con el mínimo de créditos de HISTORY_MIN_REMAINING)."""
+    return _api_get(f"/sports/{sport_key}/scores/",
+                    {"daysFrom": history.SCORES_DAYS_FROM, "dateFormat": "iso"},
+                    counts_spend=True)
+
+def fetch_event_odds(sport_key: str, event_id: str, market: str) -> dict:
+    """Cuota de Pinnacle de un solo partido y mercado (1 crédito). Solo con
+    CLV_ENABLED, ver history.maybe_capture_clv."""
+    return _api_get(f"/sports/{sport_key}/events/{event_id}/odds",
+                    {"markets": market, "bookmakers": "pinnacle",
+                     "oddsFormat": ODDS_FORMAT, "dateFormat": "iso"},
+                    counts_spend=True)
+
+def credits_remaining() -> Optional[int]:
+    with _usage_lock:
+        return _usage.get("remaining")
+
+# ---------------------------------------------------------------------------
 # Filtros
 # ---------------------------------------------------------------------------
 def is_game_today(game: dict) -> bool:
@@ -1091,6 +1116,7 @@ def moneyline_efficiency(game: dict, sport: str) -> list[dict]:
             "market":            "Moneyline",
             "short_market":      "ML",
             "selection":         name,
+            "outcome":           name,
             "probability":       prob,
             "validation":        val,
             "color":             color,
@@ -1152,6 +1178,7 @@ def spread_signals(game: dict, sport: str) -> list[dict]:
             "market":            "Spread",
             "short_market":      "SPR",
             "selection":         selection,
+            "outcome":           name,
             "probability":       prob,
             "validation":        val,
             "color":             color,
@@ -1199,6 +1226,7 @@ def total_signals(game: dict, sport: str) -> list[dict]:
             "market":            "Total",
             "short_market":      "TOT",
             "selection":         f"{name} {point_str}".strip(),
+            "outcome":           name,
             "probability":       prob,
             "validation":        val,
             "color":             color,
@@ -1345,6 +1373,7 @@ def game_prediction_full(game: dict, sport: str) -> dict:
         "home_team":   game.get("home_team"),
         "away_team":   game.get("away_team"),
         "start_time":  game.get("commence_time"),
+        "event_id":    game.get("id"),
         "ml":          ml,
         "spread":      spread,
         "total":       total,
@@ -1703,7 +1732,9 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
     for full in dash["all_games"]:
         for mkey in ("ml", "spread", "total"):
             for sig in full.get(mkey, []):
-                all_signals.append({**sig, "game": full["game"], "start_time": full["start_time"]})
+                all_signals.append({**sig, "game": full["game"], "start_time": full["start_time"],
+                                    "event_id": full.get("event_id"),
+                                    "home_team": full.get("home_team"), "away_team": full.get("away_team")})
     all_signals = dedupe(all_signals)
 
     dash["edge_source_stats"] = dict(Counter(s.get("fair_source", "consensus") for s in all_signals))
@@ -1758,6 +1789,18 @@ def get_dashboard(selected_sports: list, force_refresh: bool = False) -> dict:
     dash["ticket_mltotal_3"]  = build_mltotal_ticket("🎯 Parlay ML+Total — 3 Juegos",  _parlay_pool_mltotal, 3,  "yellow", "Bajo",  "3 mejores juegos del día por Score Kelly combinado (ML+Total).")
     dash["ticket_mltotal_6"]  = build_mltotal_ticket("🔥 Parlay ML+Total — 6 Juegos",  _parlay_pool_mltotal, 6,  "yellow", "Medio", "6 mejores juegos del día por Score Kelly combinado (ML+Total).")
     dash["ticket_mltotal_10"] = build_mltotal_ticket("⭐ Parlay ML+Total — 10 Juegos", _parlay_pool_mltotal, 10, "yellow", "Alto",  "10 mejores juegos del día por Score Kelly combinado (ML+Total).")
+
+    # Historial (en segundo plano, nunca rompe el dashboard). "Mejores
+    # Jugadas" solo se marca cuando se calculó con todas las ligas: con el
+    # selector en una sola liga el top 5 es de esa liga y no es comparable.
+    try:
+        history.process_dashboard(
+            dash, include_top="ALL" in selected_sports, sport_keys=SPORTS_EFFICIENCY,
+            fetch_scores=fetch_scores, fetch_event_odds=fetch_event_odds,
+            remaining=credits_remaining,
+        )
+    except Exception as e:
+        logger.warning("Historial no disponible: %s", e)
 
     usage = usage_status()
     dash["api_usage"] = usage

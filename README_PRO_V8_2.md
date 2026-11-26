@@ -54,6 +54,48 @@ HIGH_ODDS_MIN_EDGE=1.0         # edge mínimo (puntos de probabilidad) para Cuot
 TOP_PLAYS_MAX_ODDS=500         # Mejores Jugadas nunca muestra cuotas mayores
 ```
 
+## v8.8 — selector de liga e Historial
+- Selector de liga en el encabezado (se recuerda en el navegador). Elegir una
+  liga no cuesta créditos extra: solo se piden cuotas de esa liga. Las ligas
+  sin juegos hoy se marcan usando /sports y /events (gratis).
+- Pestaña 📜 Historial (`history.py`, `GET /api/history`): guarda cada pick
+  de Mejores Jugadas, SÓLIDO, PROBABLE y Cuotas Altas la primera vez que
+  aparece (cuota, casa, EV, edge) y lo califica con GET /scores. Resumen de
+  ganadas/perdidas, acierto, ganancia por $10 y ROI, por nivel y por liga.
+  "Mejores Jugadas" solo se marca cuando el dashboard se calculó con todas
+  las ligas.
+- Créditos: guardar = 0. Calificar = 2 créditos por liga con picks
+  pendientes, como máximo una vez cada 48 h, y nunca con menos de 100
+  créditos en la cuenta. Un pick sin marcador dentro de 3 días queda
+  "Sin resultado".
+- CLV implementado pero apagado (`CLV_ENABLED=false`): con CLV activo pide la
+  cuota de Pinnacle de cada partido+mercado con picks una vez en los 60 min
+  previos al inicio (1 crédito cada uno).
+
+### Base de datos (Neon, gratis)
+1. https://neon.tech → crear cuenta → **New Project** (región cercana a la
+   del servicio de Render, p. ej. AWS US East).
+2. En el panel del proyecto: **Connect** → copiar la *connection string*
+   (`postgresql://usuario:clave@ep-....neon.tech/neondb?sslmode=require`).
+3. Render → servicio → **Environment** → agregar `DATABASE_URL` con ese valor
+   → guardar (Render redeploya solo).
+4. Las tablas se crean solas en la primera carga. Verificar en Historial que
+   no aparezca el aviso de "SQLite local".
+
+Sin `DATABASE_URL` se usa SQLite en `history.db` (sirve en local; en Render
+se borra en cada deploy).
+
+### Variables nuevas (opcionales)
+```
+DATABASE_URL=                  # Postgres (Neon). Vacío = SQLite local
+HISTORY_ENABLED=1              # 0 = no guardar ni calificar picks
+SCORES_INTERVAL_H=48           # horas entre consultas a /scores por liga
+HISTORY_MIN_REMAINING=100      # no calificar ni pedir CLV con menos créditos
+GRADE_DELAY_H=4                # esperar estas horas desde el inicio antes de calificar
+CLV_ENABLED=false              # cuotas de cierre de Pinnacle (1 crédito por partido+mercado)
+CLV_WINDOW_MIN=60              # ventana previa al inicio para tomar la cuota de cierre
+```
+
 ## v8.7.1
 - PROBABLE respeta el piso de probabilidad (55%). Un EV positivo por debajo
   del piso es "💰 CUOTA ALTA" y solo aparece en Cuotas Altas (no en

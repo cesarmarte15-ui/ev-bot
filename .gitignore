@@ -16,3 +16,7 @@ scripts/model/.venv/
 # Contador de creditos de The Odds API (estado local, ver ev_engine.USAGE_FILE)
 .api_usage.json
 .api_usage.json.tmp
+
+# Historial de picks en SQLite (solo local; en Render se usa DATABASE_URL)
+history.db
+history.db-journal

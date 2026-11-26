@@ -3,6 +3,7 @@ import logging
 from flask import Flask, render_template, request, jsonify
 from dotenv import load_dotenv
 from ev_engine import SPORTS, SPORTS_EFFICIENCY, get_dashboard, debug_all_sports, clear_cache, usage_status
+import history
 
 load_dotenv()
 
@@ -76,6 +77,26 @@ def api_debug():
         return jsonify(debug_all_sports())
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
+
+@app.route("/api/history")
+def api_history():
+    """Historial de picks: resumen, cortes por nivel/liga y filas."""
+    try:
+        sport = request.args.get("sport") or None
+        if sport and sport != "ALL" and sport not in SPORTS:
+            sport = None
+        tier = request.args.get("tier") or None
+        date_from = request.args.get("from") or None
+        date_to = request.args.get("to") or None
+        try:
+            limit = int(request.args.get("limit", "300"))
+        except ValueError:
+            limit = 300
+        data = history.query(sport=sport, tier=tier, date_from=date_from, date_to=date_to, limit=limit)
+        return jsonify({"ok": True, "config": history.config(), **data})
+    except Exception as e:
+        logger.error("History error: %s", e, exc_info=True)
+        return jsonify({"ok": False, "error": str(e), "config": history.config()}), 500
 
 @app.route("/api/usage")
 def api_usage():

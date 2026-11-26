@@ -43,6 +43,22 @@
     background:var(--bg3);color:var(--text);font-size:13px;font-weight:600;cursor:pointer}
   .league-select option:disabled{color:var(--muted)}
 
+  /* HISTORIAL */
+  .hist-filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
+  .hist-filters select,.hist-filters input{padding:7px 10px;border-radius:var(--radius);border:1px solid var(--border);
+    background:var(--bg3);color:var(--text);font-size:13px}
+  .hist-note{font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.5}
+  .hist-table td,.hist-table th{padding:8px 10px;font-size:12px;vertical-align:top}
+  .res{font-weight:700;white-space:nowrap}
+  .res.won{color:var(--green)} .res.lost{color:var(--red)} .res.push{color:var(--silver)}
+  .res.pending{color:var(--yellow)} .res.no_result{color:var(--muted)}
+  .pos{color:var(--green);font-weight:700} .neg{color:var(--red);font-weight:700}
+  .tier-tag{display:inline-block;font-size:10px;font-weight:700;padding:1px 6px;border-radius:10px;
+    margin:0 3px 3px 0;border:1px solid var(--border);color:var(--muted);white-space:nowrap}
+  .tier-tag.top{color:var(--gold);border-color:var(--gold)} .tier-tag.green{color:var(--green);border-color:var(--green)}
+  .tier-tag.blue{color:var(--blue);border-color:var(--blue)} .tier-tag.high{color:var(--yellow);border-color:var(--yellow)}
+  .table-wrap{overflow-x:auto}
+
   /* TABS */
   .tabs{display:flex;gap:4px;padding:16px 24px 0;border-bottom:1px solid var(--border);
     background:var(--bg2);overflow-x:auto}
@@ -259,6 +275,7 @@
   <button class="tab" onclick="showTab('ev')"        id="tab-ev">📊 Apuestas EV</button>
   <button class="tab" onclick="showTab('high')"      id="tab-high">💰 Cuotas Altas</button>
   <button class="tab" onclick="showTab('tickets')"   id="tab-tickets">🎟 Tickets</button>
+  <button class="tab" onclick="showTab('historial')" id="tab-historial">📜 Historial</button>
   <button class="tab" onclick="showTab('debug')"     id="tab-debug">🛠 Debug</button>
 </div>
 
@@ -365,6 +382,35 @@
     <div id="tickets-container" style="display:none"></div>
   </div>
 
+  <!-- HISTORIAL -->
+  <div class="tab-content" id="content-historial">
+    <div class="section-header">
+      <span class="section-title">📜 Historial de picks</span>
+      <span class="section-count" id="hist-count">0</span>
+    </div>
+    <div class="hist-filters">
+      <select id="hist-sport">
+        <option value="ALL">Todas las ligas</option>
+        {% for label in sports %}<option value="{{ label }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+      <select id="hist-tier">
+        <option value="">Todos los niveles</option>
+        <option value="top">⭐ Mejores Jugadas</option>
+        <option value="green">🔒 Sólido</option>
+        <option value="blue">📌 Probable</option>
+        <option value="high">💰 Cuotas Altas</option>
+      </select>
+      <input type="date" id="hist-from" title="Desde">
+      <input type="date" id="hist-to" title="Hasta">
+      <button class="btn btn-outline" onclick="loadHistory()">🔍 Ver</button>
+    </div>
+    <div id="hist-note" class="hist-note"></div>
+    <div id="hist-summary"></div>
+    <div id="hist-breakdown"></div>
+    <div id="hist-rows"></div>
+  </div>
+
   <!-- DEBUG -->
   <div class="tab-content" id="content-debug">
     <div class="section-header"><span class="section-title">🛠 Estado de Ligas</span></div>
@@ -396,6 +442,7 @@ function showTab(name) {
   document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
   document.getElementById('content-' + name).classList.add('active');
   document.getElementById('tab-' + name).classList.add('active');
+  if (name === 'historial' && !historyLoaded) loadHistory();
 }
 
 // ── SELECTOR DE LIGA ──────────────────────────────────────
@@ -999,6 +1046,145 @@ function renderDebug(data) {
     </table>`;
 }
 
+// ── HISTORIAL ─────────────────────────────────────────────
+// Lee /api/history (base de datos, 0 créditos). La calificación con
+// marcadores corre sola en el servidor: ver history.py.
+let historyLoaded = false;
+function escHtml(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+function isoDay(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function initHistoryFilters() {
+  const to = new Date(), from = new Date();
+  from.setDate(from.getDate() - 30);
+  document.getElementById('hist-from').value = isoDay(from);
+  document.getElementById('hist-to').value = isoDay(to);
+}
+function signed(v, digits = 2, suffix = '') {
+  if (v == null) return '--';
+  const cls = v > 0 ? 'pos' : v < 0 ? 'neg' : '';
+  return `<span class="${cls}">${v > 0 ? '+' : ''}${v.toFixed(digits)}${suffix}</span>`;
+}
+const RESULT_LABEL = {won:'✅ Ganada', lost:'❌ Perdida', push:'➖ Push', pending:'⏳ Pendiente', no_result:'∅ Sin resultado'};
+
+async function loadHistory() {
+  historyLoaded = true;
+  const params = new URLSearchParams();
+  const sport = document.getElementById('hist-sport').value;
+  const tier  = document.getElementById('hist-tier').value;
+  const from  = document.getElementById('hist-from').value;
+  const to    = document.getElementById('hist-to').value;
+  if (sport && sport !== 'ALL') params.set('sport', sport);
+  if (tier) params.set('tier', tier);
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
+  const box = document.getElementById('hist-rows');
+  box.innerHTML = `<div class="loading-overlay"><div class="loading-spinner"></div> Cargando...</div>`;
+  try {
+    const res = await fetch('/api/history?' + params.toString());
+    const body = await res.json();
+    renderHistoryNote(body.config || {});
+    if (!res.ok || !body.ok) throw new Error(body.error || `HTTP ${res.status}`);
+    renderHistory(body);
+  } catch (e) {
+    document.getElementById('hist-summary').innerHTML = '';
+    document.getElementById('hist-breakdown').innerHTML = '';
+    box.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-msg">Error: ${escHtml(e.message)}</div></div>`;
+  }
+}
+
+function renderHistoryNote(cfg) {
+  const parts = [];
+  if (cfg.enabled === false) parts.push('⚠ Historial desactivado (HISTORY_ENABLED=0).');
+  if (cfg.backend && !cfg.persistent) parts.push('⚠ Guardado en SQLite local: en Render se borra en cada deploy. Configurá DATABASE_URL (Neon) para conservarlo.');
+  parts.push(`Se guarda cada pick la primera vez que aparece, con la cuota y el EV de ese momento (0 créditos). Los resultados se califican con los marcadores de The Odds API: una consulta por liga cada ${cfg.scores_interval_h ?? 48} h (${cfg.scores_cost ?? 2} créditos), solo si hay picks pendientes y quedan al menos ${cfg.min_remaining ?? 100} créditos. Un pick que no se califica dentro de 3 días queda "Sin resultado".`);
+  parts.push(`Ganancia y ROI a apuesta fija de $10 por pick. CLV: ${cfg.clv_enabled ? 'activado' : 'desactivado (CLV_ENABLED=false)'}.`);
+  document.getElementById('hist-note').innerHTML = parts.map(escHtml).join('<br>');
+}
+
+function histStatTiles(s) {
+  return `
+    <div class="stat-grid">
+      <div class="stat-tile"><div class="stat-tile-value">${s.total}</div><div class="stat-tile-label">Picks</div></div>
+      <div class="stat-tile green"><div class="stat-tile-value">${s.won}-${s.lost}${s.push ? '-' + s.push : ''}</div><div class="stat-tile-label">Ganadas-Perdidas${s.push ? '-Push' : ''}</div></div>
+      <div class="stat-tile"><div class="stat-tile-value">${s.hit_rate != null ? s.hit_rate + '%' : '--'}</div><div class="stat-tile-label">Acierto</div></div>
+      <div class="stat-tile"><div class="stat-tile-value">${signed(s.profit_per_10, 2)}</div><div class="stat-tile-label">Ganancia ($10 por pick)</div></div>
+      <div class="stat-tile"><div class="stat-tile-value">${signed(s.roi, 1, '%')}</div><div class="stat-tile-label">ROI</div></div>
+      <div class="stat-tile"><div class="stat-tile-value">${s.pending}</div><div class="stat-tile-label">Pendientes</div></div>
+      ${s.clv_count ? `<div class="stat-tile"><div class="stat-tile-value">${signed(s.avg_clv, 2, '%')}</div><div class="stat-tile-label">CLV promedio (${s.clv_count})</div></div>` : ''}
+    </div>`;
+}
+
+function histBreakdownTable(title, rows, keyFn) {
+  if (!rows || !rows.length) return '';
+  const body = rows.map(r => `
+    <tr>
+      <td>${escHtml(keyFn(r))}</td>
+      <td>${r.total}</td>
+      <td>${r.won}-${r.lost}${r.push ? '-' + r.push : ''}</td>
+      <td>${r.hit_rate != null ? r.hit_rate + '%' : '--'}</td>
+      <td>${signed(r.profit_per_10, 2)}</td>
+      <td>${signed(r.roi, 1, '%')}</td>
+      <td>${r.pending}</td>
+    </tr>`).join('');
+  return `
+    <div class="section-header" style="margin-top:20px"><span class="section-title">${escHtml(title)}</span></div>
+    <div class="table-wrap"><table class="sports-table hist-table">
+      <thead><tr><th></th><th>Picks</th><th>G-P</th><th>Acierto</th><th>Ganancia $10</th><th>ROI</th><th>Pend.</th></tr></thead>
+      <tbody>${body}</tbody>
+    </table></div>`;
+}
+
+function renderHistory(data) {
+  const rows = data.rows || [];
+  document.getElementById('hist-count').textContent = (data.summary || {}).total || 0;
+  document.getElementById('hist-summary').innerHTML = histStatTiles(data.summary || {});
+  document.getElementById('hist-breakdown').innerHTML =
+    histBreakdownTable('Por nivel', data.by_tier, r => r.label) +
+    histBreakdownTable('Por liga', data.by_sport, r => r.sport);
+
+  if (!rows.length) {
+    document.getElementById('hist-rows').innerHTML =
+      `<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-msg">Todavía no hay picks guardados con estos filtros.</div></div>`;
+    return;
+  }
+  const showClv = rows.some(r => r.clv != null);
+  const body = rows.map(r => {
+    const tags = [
+      r.is_top ? '<span class="tier-tag top">⭐ Top</span>' : '',
+      r.is_eff && r.color === 'green' ? '<span class="tier-tag green">🔒 Sólido</span>' : '',
+      r.is_eff && r.color === 'blue' ? '<span class="tier-tag blue">📌 Probable</span>' : '',
+      r.is_high ? '<span class="tier-tag high">💰 Cuota alta</span>' : '',
+    ].join('');
+    const score = (r.home_score != null && r.away_score != null)
+      ? `${escHtml(r.away_team)} ${r.away_score} – ${r.home_score} ${escHtml(r.home_team)}` : '';
+    const profit = r.profit != null && ['won','lost','push'].includes(r.status) ? signed(r.profit * 10, 2) : '--';
+    return `
+      <tr>
+        <td style="white-space:nowrap">${escHtml(r.pick_date)}</td>
+        <td>${escHtml(r.sport)}</td>
+        <td>${escHtml(r.game)}</td>
+        <td><b>${escHtml(r.selection)}</b> · ${escHtml(r.market)}</td>
+        <td>${escHtml(fmtOdds(r.odds) ?? '--')}<div style="color:var(--muted);font-size:11px">${escHtml(r.bookmaker)}</div></td>
+        <td>${r.ev != null ? signed(r.ev, 1, '%') : '--'}</td>
+        <td>${tags}</td>
+        <td><span class="res ${escHtml(r.status)}">${RESULT_LABEL[r.status] || escHtml(r.status)}</span><div style="color:var(--muted);font-size:11px">${score}</div></td>
+        <td>${profit}</td>
+        ${showClv ? `<td>${r.clv != null ? signed(r.clv, 2, '%') : '--'}</td>` : ''}
+      </tr>`;
+  }).join('');
+  document.getElementById('hist-rows').innerHTML = `
+    <div class="section-header" style="margin-top:20px"><span class="section-title">Picks</span></div>
+    <div class="table-wrap"><table class="sports-table hist-table">
+      <thead><tr><th>Fecha</th><th>Liga</th><th>Partido</th><th>Pick</th><th>Cuota</th><th>EV</th><th>Nivel</th><th>Resultado</th><th>$10</th>${showClv ? '<th>CLV</th>' : ''}</tr></thead>
+      <tbody>${body}</tbody>
+    </table></div>
+    ${data.truncated ? '<p class="hist-note">Se muestran los más recientes; el resumen cuenta todos los picks del filtro.</p>' : ''}`;
+}
+
 async function clearCache() {
   await fetch('/api/clear-cache');
   loadData(true);
@@ -1051,6 +1237,7 @@ function scheduleAutoRefresh() {
   autoRefreshTimer = setTimeout(async () => { await loadData(false); refreshLeagueStatus(); scheduleAutoRefresh(); }, min * 60 * 1000);
 }
 initLeagueSelect();
+initHistoryFilters();
 loadData().then(() => { refreshLeagueStatus(); scheduleAutoRefresh(); });
 </script>
 </body>

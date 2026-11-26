@@ -3,3 +3,4 @@ requests
 python-dotenv
 gunicorn
 tzdata
+psycopg[binary]
